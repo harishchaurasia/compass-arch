@@ -12,4 +12,10 @@ class PolicyDecision(Enum):
 
 
 def decide(success_prob: float, risk_level: str) -> PolicyDecision:
-    raise NotImplementedError
+    if risk_level == "low":
+        return PolicyDecision.EXECUTE
+    if risk_level == "medium":
+        return PolicyDecision.EXECUTE if success_prob >= T_MED else PolicyDecision.SELF_VERIFY
+    if risk_level == "high":
+        return PolicyDecision.EXECUTE if success_prob >= T_HIGH else PolicyDecision.ABSTAIN
+    raise ValueError(f"Unknown risk_level: {risk_level!r}")
