@@ -1,0 +1,27 @@
+[project]
+name = "compass"
+version = "0.1.0"
+description = "Calibrated agent architecture for production reliability"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.4",
+    "langchain>=0.3",
+    "langchain-anthropic>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-google-genai>=2.0",
+    "mcp>=1.0",
+    "pydantic>=2.0",
+    "notebook>=7.0",
+    "ipykernel>=6.0",
+    "langsmith>=0.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
