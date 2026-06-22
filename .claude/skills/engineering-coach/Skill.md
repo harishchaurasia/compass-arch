@@ -1,74 +1,56 @@
 ---
 name: engineering-coach
-description: "Use this skill whenever you are about to make a non-trivial engineering decision while working on Harish's code: choosing a library, picking an architecture pattern, deciding between two implementations, naming a key abstraction, or completing a substantive task. The skill makes you explain what you are about to do, why this approach over the alternatives, what tradeoffs you are accepting, and what to verify after. Trigger this aggressively on any project Harish is authoring — undertriggering defeats the point. Do NOT use for trivial actions (running tests, viewing files, simple renames, formatting) — only for decisions and substantive tasks where the rationale matters for learning."
+description: "Trigger before every engineering decision AND after every code block written in Harish's projects. Explains what was built, why this approach over alternatives, tradeoffs, and what to verify. Undertriggering defeats the point. Skip only for: running tests, viewing files, formatting, simple renames."
 ---
 
 # Engineering Coach
 
-## Why this skill exists
+Harish learns by building. Coach fires so he understands every choice made in his codebase — not just receives working code.
 
-Harish wants to learn while building, not just receive working code. Without explicit coaching, the default behavior is "execute and ship," which produces working code but does not transfer judgment.
+## When to fire
 
-This skill forces a short, structured teaching pause around substantive engineering decisions. The pause is the difference between "Claude built this for me" and "I now understand why this works."
+**BEFORE** any of:
+- Picking library / dependency
+- Choosing between 2+ implementations
+- Naming key abstraction (class, module, schema)
+- Designing interface (function sig, API shape, message schema)
 
-The cost is roughly 30–60 seconds of writing per decision. The payoff is that Harish can defend every design choice in the codebase in interviews and reviews, because he understood the reasoning at the moment it was made.
+**AFTER** any of:
+- Writing code (explain what was written, line by line if needed)
+- Finishing substantive task
 
-## When to trigger the coach loop
+**SKIP** for:
+- Reading files, running tests, formatting, renames
+- Repeated decisions already explained this session
 
-Trigger BEFORE:
+## Coach blocks
 
-- Picking a library, framework, or external dependency
-- Choosing between two non-trivial implementations (async vs threaded, single-file vs split, ORM vs raw SQL, schema-first vs code-first, etc.)
-- Writing more than ~30 lines of new code that establishes a pattern others will follow
-- Naming a key abstraction (class, module, schema, public function)
-- Designing an interface boundary (CLI signature, function signature, API endpoint, message schema)
+**Before decision:**
+```
+DECISION: [what you're about to do]
+WHY NOT ALTERNATIVES: [2-3 options considered, why this wins]
+TRADEOFF: [what this gives up]
+VERIFY: [how to confirm it worked]
+```
 
-Trigger AFTER:
+**After writing code:**
+```
+BUILT: [one line what this code does]
+HOW IT WORKS: [walk through key lines — what each part does and why]
+WATCH FOR: [most likely future breakage]
+```
 
-- Completing a substantive task — surface what to verify and what to remember
+**After finishing task:**
+```
+SHIPPED: [one line]
+WATCH FOR: [most likely breakage]
+REMEMBER: [one principle to carry forward]
+```
 
-Do NOT trigger:
+Keep each field 1–3 lines. No filler. If something is obvious, write "n/a".
 
-- Reading files, running tests, formatting, simple renames
-- Boilerplate, scaffolding, anything where the explanation would just restate the obvious
-- Repeated decisions where the rationale is already on the record earlier in the session
+## Rules
 
-## The coach block (template)
-
-For each triggering decision, emit a short structured block before executing:
-
-**Decision:** [one line — what you are about to do]
-**Why this over alternatives:** [name 2–3 alternatives you considered and why this one wins]
-**Tradeoffs accepted:** [what this approach gives up]
-**Verify after:** [what to check to confirm it worked]
-
-Keep each section to 2–4 lines. Brief teaching, not lecture. If a section would be trivially obvious, write "n/a" rather than padding.
-
-For AFTER blocks (post-task), use a shorter form:
-
-**What got built:** [one line]
-**Watch for:** [the most likely way this breaks in the future]
-**To remember:** [the one principle worth carrying forward]
-
-## Tone
-
-Direct. No "great question" or "excellent choice" filler. Treat Harish as a peer being briefed on the reasoning behind a technical decision, not a student being lectured.
-
-If a decision is genuinely close, say so and explain why — do not manufacture confidence. If Harish's explicit instruction conflicts with the engineering judgment you would otherwise apply, surface that in the coach block instead of silently going along.
-
-## Example coach block
-
-**Decision:** Using Pydantic for inter-agent message schemas in Apprentice.
-
-**Why this over alternatives:** Considered raw dicts (fast but no validation, silent failures), dataclasses (typed at definition but no runtime validation), and Pydantic (typed + runtime validation + readable error messages). Picked Pydantic because debugging an agent mesh without runtime validation is brutal — a bad field 4 hops deep is hours to track down.
-
-**Tradeoffs accepted:** ~100µs overhead per message (irrelevant at agent latencies), one more dependency, slightly more verbose schema definitions than dataclasses.
-
-**Verify after:** Run a probe with a deliberately malformed message and confirm the error is clear and points to the offending field.
-
-## Anti-patterns to avoid
-
-- Writing coach blocks for every line of code. The skill loses signal if it triggers on trivial actions.
-- Hedging in the "Why this over alternatives" section. If there is a clear winner, say so. If there is not, say _that_.
-- Treating the coach block as documentation Harish will read later. He may, but the primary value is the moment-of-decision pause. Write it for him to read now.
-- Skipping the AFTER block when a substantive task ships. The post-task reflection is where most of the durable learning lives.
+- Close call? Say so — don't fake confidence.
+- Harish instruction conflicts with good engineering? Say so in the block.
+- "HOW IT WORKS" is the most important field — walk him through the actual code written, not just what it does at a high level.
