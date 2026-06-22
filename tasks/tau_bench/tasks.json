@@ -1,0 +1,38 @@
+[
+  {
+    "id": "retail_001",
+    "domain": "retail",
+    "instruction": "I need to cancel my pending laptop order. My name is Sofia Chen and my zip code is 10001. The order number is #W1111111.",
+    "user_id": "sofia_chen_10001",
+    "actions": [
+      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "Sofia", "last_name": "Chen", "zip": "10001"}},
+      {"name": "get_order_details", "kwargs": {"order_id": "#W1111111"}},
+      {"name": "cancel_pending_order", "kwargs": {"order_id": "#W1111111"}}
+    ],
+    "expected_outcome": "Order #W1111111 cancelled"
+  },
+  {
+    "id": "retail_002",
+    "domain": "retail",
+    "instruction": "I want to return the noise-cancelling headphones I received. My email is marcus@example.com. Order number is #W2222222.",
+    "user_id": "marcus_johnson_90210",
+    "actions": [
+      {"name": "find_user_id_by_email", "kwargs": {"email": "marcus@example.com"}},
+      {"name": "get_order_details", "kwargs": {"order_id": "#W2222222"}},
+      {"name": "return_delivered_order_items", "kwargs": {"order_id": "#W2222222", "item_ids": ["item_hp_002"], "payment_method_id": "card_5678"}}
+    ],
+    "expected_outcome": "Return processed for order #W2222222"
+  },
+  {
+    "id": "retail_003",
+    "domain": "retail",
+    "instruction": "Please update the shipping address on my pending headphones order #W1111112 to 789 New Rd, Brooklyn, NY 11201. I'm Sofia Chen, zip 10001.",
+    "user_id": "sofia_chen_10001",
+    "actions": [
+      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "Sofia", "last_name": "Chen", "zip": "10001"}},
+      {"name": "get_order_details", "kwargs": {"order_id": "#W1111112"}},
+      {"name": "modify_pending_order_address", "kwargs": {"order_id": "#W1111112", "address": {"street": "789 New Rd", "city": "Brooklyn", "state": "NY", "zip": "11201"}}}
+    ],
+    "expected_outcome": "Address on order #W1111112 updated"
+  }
+]

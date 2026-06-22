@@ -1,0 +1,18 @@
+{
+  "sofia_chen_10001": {
+    "name": {"first_name": "Sofia", "last_name": "Chen"},
+    "email": "sofia@example.com",
+    "zip": "10001",
+    "address": {"street": "123 Main St", "city": "New York", "state": "NY", "zip": "10001"},
+    "payment_methods": {"card_1234": {"type": "credit_card", "last4": "1234"}},
+    "orders": ["#W1111111", "#W1111112"]
+  },
+  "marcus_johnson_90210": {
+    "name": {"first_name": "Marcus", "last_name": "Johnson"},
+    "email": "marcus@example.com",
+    "zip": "90210",
+    "address": {"street": "456 Oak Ave", "city": "Beverly Hills", "state": "CA", "zip": "90210"},
+    "payment_methods": {"card_5678": {"type": "credit_card", "last4": "5678"}},
+    "orders": ["#W2222222"]
+  }
+}
