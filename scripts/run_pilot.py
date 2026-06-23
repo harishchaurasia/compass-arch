@@ -26,7 +26,7 @@ from eval.trial_store import load_trials, save_trial
 
 TASKS_FILE = Path(__file__).parent.parent / "tasks" / "tau_bench" / "tasks.json"
 DB_PATH = Path(__file__).parent.parent / "results" / "trials.db"
-MODEL_NAME = "gpt-4o"  # use gpt-4o-mini to save budget if needed
+MODEL_NAME = "gpt-4o-mini"
 
 TOOLS = [
     find_user_id_by_name_zip,
