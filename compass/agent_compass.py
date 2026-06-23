@@ -28,16 +28,23 @@ class CompassState(TypedDict):
 
 
 def _system_prompt(tools: list[BaseTool]) -> SystemMessage:
-    tool_list = "\n".join(f"  - {t.name}: {t.description}" for t in tools)
+    tool_lines = []
+    for t in tools:
+        params = ", ".join(
+            f"{name}: {info.get('type', 'string')}"
+            for name, info in t.args.items()
+        )
+        tool_lines.append(f"  - {t.name}({params}): {t.description}")
+    tool_str = "\n".join(tool_lines)
     return SystemMessage(content=(
-        f"You are a calibrated agent. Available tools:\n{tool_list}\n\n"
+        f"You are a calibrated agent. Available tools with EXACT parameter names:\n{tool_str}\n\n"
         "At each step output JSON with these exact fields:\n"
         "  reasoning: your thinking (string)\n"
-        "  action: {\"tool\": \"<name>\", \"args\": {...}} to call a tool,\n"
+        "  action: {\"tool\": \"<name>\", \"args\": {<exact params as listed above>}} to call a tool,\n"
         "          OR {\"final_answer\": \"<text>\"} when done\n"
         "  confidence: float 0.0–1.0, your belief this action is correct\n"
         "  risk_level: \"low\" | \"medium\" | \"high\" — cost of being wrong\n\n"
-        "Be honest about confidence. Low confidence on a high-risk action means you should abstain."
+        "IMPORTANT: Use the EXACT parameter names shown above. Do not rename them."
     ))
 
 

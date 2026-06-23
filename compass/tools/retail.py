@@ -40,6 +40,8 @@ def get_user_details(user_id: str) -> str:
 @tool
 def get_order_details(order_id: str) -> str:
     """Get full details for an order including items, status, and address."""
+    if not order_id.startswith("#"):
+        order_id = "#" + order_id
     if order_id not in db.ORDERS:
         return f"Order not found: {order_id}"
     return _json(db.ORDERS[order_id])
