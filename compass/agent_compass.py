@@ -47,7 +47,7 @@ def build_compass_agent(
     max_steps: int = 20,
 ) -> StateGraph:
     tool_map = {t.name: t for t in tools}
-    structured_model = model.with_structured_output(CompassStep)
+    structured_model = model.with_structured_output(CompassStep, method="function_calling")
     system = _system_prompt(tools)
 
     def plan(state: CompassState) -> dict:

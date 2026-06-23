@@ -19,7 +19,7 @@ class FakeCompassModel:
     def __init__(self, steps: list[CompassStep]):
         self._iter = iter(steps)
 
-    def with_structured_output(self, schema):
+    def with_structured_output(self, schema, **kwargs):
         return self  # invoke() returns CompassStep, not AIMessage
 
     def invoke(self, messages) -> CompassStep:
