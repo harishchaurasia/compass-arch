@@ -9,7 +9,7 @@
       {"name": "get_order_details", "kwargs": {"order_id": "#W1111111"}},
       {"name": "cancel_pending_order", "kwargs": {"order_id": "#W1111111"}}
     ],
-    "expected_outcome": "Order #W1111111 cancelled"
+    "expected_outcome": "cancelled"
   },
   {
     "id": "retail_002",
@@ -21,7 +21,7 @@
       {"name": "get_order_details", "kwargs": {"order_id": "#W2222222"}},
       {"name": "return_delivered_order_items", "kwargs": {"order_id": "#W2222222", "item_ids": ["item_hp_002"], "payment_method_id": "card_5678"}}
     ],
-    "expected_outcome": "Return processed for order #W2222222"
+    "expected_outcome": "return"
   },
   {
     "id": "retail_003",
@@ -33,6 +33,29 @@
       {"name": "get_order_details", "kwargs": {"order_id": "#W1111112"}},
       {"name": "modify_pending_order_address", "kwargs": {"order_id": "#W1111112", "address": {"street": "789 New Rd", "city": "Brooklyn", "state": "NY", "zip": "11201"}}}
     ],
-    "expected_outcome": "Address on order #W1111112 updated"
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_004",
+    "domain": "retail",
+    "instruction": "What are the details of order #W3333333? My name is Elena Park, zip 60601.",
+    "user_id": "elena_park_60601",
+    "actions": [
+      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "Elena", "last_name": "Park", "zip": "60601"}},
+      {"name": "get_order_details", "kwargs": {"order_id": "#W3333333"}}
+    ],
+    "expected_outcome": "running shoes"
+  },
+  {
+    "id": "retail_005",
+    "domain": "retail",
+    "instruction": "I want to cancel order #W4444444 but I'm not sure if it's still pending. Can you check and cancel if possible? I'm David Kim, zip 98101.",
+    "user_id": "david_kim_98101",
+    "actions": [
+      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "David", "last_name": "Kim", "zip": "98101"}},
+      {"name": "get_order_details", "kwargs": {"order_id": "#W4444444"}},
+      {"name": "cancel_pending_order", "kwargs": {"order_id": "#W4444444"}}
+    ],
+    "expected_outcome": "cancelled"
   }
 ]

@@ -14,5 +14,21 @@
     "address": {"street": "456 Oak Ave", "city": "Beverly Hills", "state": "CA", "zip": "90210"},
     "payment_methods": {"card_5678": {"type": "credit_card", "last4": "5678"}},
     "orders": ["#W2222222"]
+  },
+  "elena_park_60601": {
+    "name": {"first_name": "Elena", "last_name": "Park"},
+    "email": "elena@example.com",
+    "zip": "60601",
+    "address": {"street": "200 Michigan Ave", "city": "Chicago", "state": "IL", "zip": "60601"},
+    "payment_methods": {"card_9012": {"type": "credit_card", "last4": "9012"}},
+    "orders": ["#W3333333"]
+  },
+  "david_kim_98101": {
+    "name": {"first_name": "David", "last_name": "Kim"},
+    "email": "david@example.com",
+    "zip": "98101",
+    "address": {"street": "500 Pine St", "city": "Seattle", "state": "WA", "zip": "98101"},
+    "payment_methods": {"card_3456": {"type": "credit_card", "last4": "3456"}},
+    "orders": ["#W4444444"]
   }
 }

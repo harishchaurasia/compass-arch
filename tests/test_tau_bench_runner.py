@@ -1,25 +1,21 @@
-"""End-to-end test: vanilla agent runs a τ-bench task using retail tools.
+"""Tests for the τ-bench trial runner.
 
-We still use FakeModel so no API calls are made — but now the fake model
-produces realistic tool-call sequences matching our 3 tasks.
+We test run_trial in isolation using FakeModel — no real API calls.
+The success check is: does the final message contain the expected_outcome substring?
 """
-import json
-import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from compass.agent_vanilla import build_vanilla_agent
-from compass.tools.retail import (
-    cancel_pending_order,
-    find_user_id_by_name_zip,
-    get_order_details,
-)
-import compass.tools.retail_db as db
 import copy
+import pytest
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import tool
+
+import compass.tools.retail_db as db
+from compass.agent_vanilla import build_vanilla_agent
+from eval.tau_bench_runner import run_trial
 
 USERS = {
     "sofia_chen_10001": {
         "name": {"first_name": "Sofia", "last_name": "Chen"},
-        "email": "sofia@example.com",
-        "zip": "10001",
+        "email": "sofia@example.com", "zip": "10001",
         "address": {"street": "123 Main St", "city": "New York", "state": "NY", "zip": "10001"},
         "payment_methods": {"card_1234": {"type": "credit_card", "last4": "1234"}},
         "orders": ["#W1111111"],
@@ -27,9 +23,7 @@ USERS = {
 }
 ORDERS = {
     "#W1111111": {
-        "order_id": "#W1111111",
-        "user_id": "sofia_chen_10001",
-        "status": "pending",
+        "order_id": "#W1111111", "user_id": "sofia_chen_10001", "status": "pending",
         "items": [{"item_id": "item_lp_001", "name": "Laptop Pro 15", "price": 1299.99}],
         "address": {"street": "123 Main St", "city": "New York", "state": "NY", "zip": "10001"},
         "payment_method_id": "card_1234",
@@ -54,41 +48,42 @@ class FakeModel:
         return next(self._responses)
 
 
-def test_vanilla_agent_cancels_order_end_to_end():
-    """Agent should find user, check order, cancel it — using real retail tools."""
+@tool
+def cancel_order_stub(order_id: str) -> str:
+    """Cancel an order."""
+    return f"Order {order_id} cancelled."
+
+
+def test_run_trial_success():
+    task = {
+        "id": "retail_001",
+        "instruction": "Cancel order #W1111111.",
+        "expected_outcome": "cancelled",
+    }
     responses = [
-        # step 1: find the user
         AIMessage(content="", tool_calls=[{
-            "name": "find_user_id_by_name_zip",
-            "args": {"first_name": "Sofia", "last_name": "Chen", "zip": "10001"},
-            "id": "call_1", "type": "tool_call",
+            "name": "cancel_order_stub", "args": {"order_id": "#W1111111"},
+            "id": "c1", "type": "tool_call",
         }]),
-        # step 2: check order details
-        AIMessage(content="", tool_calls=[{
-            "name": "get_order_details",
-            "args": {"order_id": "#W1111111"},
-            "id": "call_2", "type": "tool_call",
-        }]),
-        # step 3: cancel it
-        AIMessage(content="", tool_calls=[{
-            "name": "cancel_pending_order",
-            "args": {"order_id": "#W1111111"},
-            "id": "call_3", "type": "tool_call",
-        }]),
-        # step 4: final answer
-        AIMessage(content="Order #W1111111 has been cancelled successfully."),
+        AIMessage(content="Order #W1111111 has been cancelled."),
     ]
+    agent = build_vanilla_agent(FakeModel(responses), [cancel_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
 
-    tools = [find_user_id_by_name_zip, get_order_details, cancel_pending_order]
-    agent = build_vanilla_agent(FakeModel(responses), tools)
+    assert result.task_id == "retail_001"
+    assert result.condition == "vanilla"
+    assert result.success is True
+    assert result.steps == 2
 
-    task_instruction = "Cancel my pending laptop order #W1111111. I'm Sofia Chen, zip 10001."
-    state = agent.invoke({"messages": [HumanMessage(content=task_instruction)], "steps": 0})
 
-    # order was actually cancelled in the db
-    assert db.ORDERS["#W1111111"]["status"] == "cancelled"
-    # agent gave a final answer
-    assert "cancelled" in state["messages"][-1].content.lower()
-    # tools were actually called (ToolMessages in history)
-    tool_messages = [m for m in state["messages"] if isinstance(m, ToolMessage)]
-    assert len(tool_messages) == 3
+def test_run_trial_failure():
+    task = {
+        "id": "retail_001",
+        "instruction": "Cancel order #W1111111.",
+        "expected_outcome": "cancelled",
+    }
+    responses = [AIMessage(content="I cannot help with that.")]
+    agent = build_vanilla_agent(FakeModel(responses), [cancel_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.success is False

@@ -27,13 +27,18 @@ class CompassState(TypedDict):
     abstained: bool
 
 
-_SYSTEM = SystemMessage(content=(
-    "You are a calibrated agent. At each step output JSON matching this schema:\n"
-    "  reasoning: your thinking (string)\n"
-    "  action: {\"tool\": \"<name>\", \"args\": {...}} OR {\"final_answer\": \"<text>\"}\n"
-    "  confidence: float 0–1, your belief this action is correct\n"
-    "  risk_level: \"low\" | \"medium\" | \"high\" — cost of being wrong"
-))
+def _system_prompt(tools: list[BaseTool]) -> SystemMessage:
+    tool_list = "\n".join(f"  - {t.name}: {t.description}" for t in tools)
+    return SystemMessage(content=(
+        f"You are a calibrated agent. Available tools:\n{tool_list}\n\n"
+        "At each step output JSON with these exact fields:\n"
+        "  reasoning: your thinking (string)\n"
+        "  action: {\"tool\": \"<name>\", \"args\": {...}} to call a tool,\n"
+        "          OR {\"final_answer\": \"<text>\"} when done\n"
+        "  confidence: float 0.0–1.0, your belief this action is correct\n"
+        "  risk_level: \"low\" | \"medium\" | \"high\" — cost of being wrong\n\n"
+        "Be honest about confidence. Low confidence on a high-risk action means you should abstain."
+    ))
 
 
 def build_compass_agent(
@@ -43,9 +48,10 @@ def build_compass_agent(
 ) -> StateGraph:
     tool_map = {t.name: t for t in tools}
     structured_model = model.with_structured_output(CompassStep)
+    system = _system_prompt(tools)
 
     def plan(state: CompassState) -> dict:
-        step: CompassStep = structured_model.invoke([_SYSTEM] + list(state["messages"]))
+        step: CompassStep = structured_model.invoke([system] + list(state["messages"]))
         return {"steps": [step]}
 
     def route(state: CompassState) -> str:
