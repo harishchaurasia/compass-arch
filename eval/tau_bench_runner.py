@@ -13,6 +13,7 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
         "messages": [HumanMessage(content=instruction)],
         "steps": 0 if condition == "vanilla" else [],
         "abstained": False,
+        "self_verify_count": 0,
     }
 
     final_state = agent.invoke(init_state)

@@ -1,30 +1,28 @@
 """Compass calibrated agent: structured output + trajectory features + action policy."""
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field
 
+from compass.calibration import calibrate
 from compass.policy import PolicyDecision, decide
+from compass.schemas import CompassAction, CompassStep  # noqa: F401 — re-exported for callers
+from compass.trajectory import extract_features
+
+MAX_SELF_VERIFY = 2  # consecutive SELF_VERIFYs before escalating to ABSTAIN
 
 
 def _append(left: list, right: list) -> list:
     return left + right
 
 
-class CompassStep(BaseModel):
-    reasoning: str
-    action: dict  # {"tool": "...", "args": {...}} OR {"final_answer": "..."}
-    confidence: float = Field(ge=0.0, le=1.0)
-    risk_level: Literal["low", "medium", "high"]
-
-
 class CompassState(TypedDict):
     messages: Annotated[list[BaseMessage], _append]
     steps: Annotated[list[CompassStep], _append]
     abstained: bool
+    self_verify_count: int
 
 
 def _system_prompt(tools: list[BaseTool]) -> SystemMessage:
@@ -37,14 +35,17 @@ def _system_prompt(tools: list[BaseTool]) -> SystemMessage:
         tool_lines.append(f"  - {t.name}({params}): {t.description}")
     tool_str = "\n".join(tool_lines)
     return SystemMessage(content=(
-        f"You are a calibrated agent. Available tools with EXACT parameter names:\n{tool_str}\n\n"
-        "At each step output JSON with these exact fields:\n"
-        "  reasoning: your thinking (string)\n"
-        "  action: {\"tool\": \"<name>\", \"args\": {<exact params as listed above>}} to call a tool,\n"
-        "          OR {\"final_answer\": \"<text>\"} when done\n"
-        "  confidence: float 0.0–1.0, your belief this action is correct\n"
-        "  risk_level: \"low\" | \"medium\" | \"high\" — cost of being wrong\n\n"
-        "IMPORTANT: Use the EXACT parameter names shown above. Do not rename them."
+        f"You are a calibrated retail customer service agent.\n\n"
+        f"Available tools (use EXACT parameter names shown):\n{tool_str}\n\n"
+        "For each step fill ALL fields at the TOP LEVEL — never nest confidence or risk_level inside action:\n"
+        "  reasoning        — explain your thinking\n"
+        "  action.tool      — tool name to call (leave null if giving a final answer)\n"
+        "  action.args      — exact tool parameters as a dict (leave empty if giving a final answer)\n"
+        "  action.final_answer — your response text (use instead of tool when task is complete)\n"
+        "  confidence       — float 0.0–1.0 (TOP-LEVEL field, NOT inside action)\n"
+        "  risk_level       — \"low\" | \"medium\" | \"high\" (TOP-LEVEL field, NOT inside action)\n\n"
+        "IMPORTANT: confidence and risk_level are SIBLINGS of action, not children of it.\n"
+        "IMPORTANT: Use the EXACT parameter names listed above. Do not invent or rename them."
     ))
 
 
@@ -54,28 +55,45 @@ def build_compass_agent(
     max_steps: int = 20,
 ) -> StateGraph:
     tool_map = {t.name: t for t in tools}
-    structured_model = model.with_structured_output(CompassStep, method="function_calling")
+    structured_model = model.with_structured_output(
+        CompassStep, method="function_calling", strict=False, include_raw=True
+    )
     system = _system_prompt(tools)
 
     def plan(state: CompassState) -> dict:
-        step: CompassStep = structured_model.invoke([system] + list(state["messages"]))
+        result = structured_model.invoke([system] + list(state["messages"]))
+        if result["parsed"] is None:
+            raise ValueError(
+                f"Model returned unparseable output.\n"
+                f"Raw response: {result['raw']}\n"
+                f"Parse error: {result['parsing_error']}"
+            )
+        step: CompassStep = result["parsed"]
         return {"steps": [step]}
 
     def route(state: CompassState) -> str:
         if len(state["steps"]) >= max_steps:
             return "abstain"
         step = state["steps"][-1]
-        if "final_answer" in step.action:
+        if step.action.final_answer is not None:
             return "finish"
-        decision = decide(step.confidence, step.risk_level)
+        features = extract_features(state["steps"])
+        success_prob = calibrate(step.confidence, features)
+        decision = decide(success_prob, step.risk_level)
+        # Escalate to abstain if SELF_VERIFY keeps firing without any execution
+        if decision == PolicyDecision.SELF_VERIFY and state["self_verify_count"] >= MAX_SELF_VERIFY:
+            return "abstain"
         return decision.value  # "execute" | "self_verify" | "abstain"
 
     def execute(state: CompassState) -> dict:
         step = state["steps"][-1]
-        tool_name = step.action["tool"]
-        tool_args = step.action.get("args", {})
+        tool_name = step.action.tool
+        tool_args = step.action.args
         result = tool_map[tool_name].invoke(tool_args)
-        return {"messages": [HumanMessage(content=f"Tool '{tool_name}' returned: {result}")]}
+        return {
+            "messages": [HumanMessage(content=f"Tool '{tool_name}' returned: {result}")],
+            "self_verify_count": 0,  # real progress — reset the streak
+        }
 
     def self_verify(state: CompassState) -> dict:
         step = state["steps"][-1]
@@ -83,7 +101,7 @@ def build_compass_agent(
             f"Low confidence ({step.confidence:.2f}) detected on a {step.risk_level}-risk action. "
             "Please re-read the context carefully and verify your plan before proceeding."
         ))
-        return {"messages": [msg]}
+        return {"messages": [msg], "self_verify_count": state["self_verify_count"] + 1}
 
     def abstain(state: CompassState) -> dict:
         step = state["steps"][-1]
@@ -95,7 +113,7 @@ def build_compass_agent(
 
     def finish(state: CompassState) -> dict:
         step = state["steps"][-1]
-        return {"messages": [AIMessage(content=step.action["final_answer"])]}
+        return {"messages": [AIMessage(content=step.action.final_answer)]}
 
     graph = StateGraph(CompassState)
     graph.add_node("plan", plan)
