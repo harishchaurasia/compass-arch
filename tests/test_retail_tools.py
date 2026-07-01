@@ -126,6 +126,12 @@ def test_cancel_delivered_order_fails():
     assert "cannot" in result.lower() or "error" in result.lower()
     assert db.ORDERS["#W2222222"]["status"] == "delivered"  # unchanged
 
+def test_cancel_pending_order_accepts_missing_hash():
+    """Models occasionally drop the leading '#' when composing the order_id argument."""
+    result = cancel_pending_order.invoke({"order_id": "W1111111"})
+    assert "cancelled" in result.lower()
+    assert db.ORDERS["#W1111111"]["status"] == "cancelled"
+
 # ── return_delivered_order_items ──────────────────────────────────────────────
 
 def test_return_delivered_items_succeeds():
@@ -144,6 +150,14 @@ def test_return_pending_order_fails():
     })
     assert "cannot" in result.lower() or "error" in result.lower()
 
+def test_return_delivered_items_accepts_missing_hash():
+    result = return_delivered_order_items.invoke({
+        "order_id": "W2222222",
+        "item_ids": ["item_hp_002"],
+        "payment_method_id": "card_5678",
+    })
+    assert "return" in result.lower()
+
 # ── modify_pending_order_address ──────────────────────────────────────────────
 
 def test_modify_address_on_pending_order():
@@ -156,3 +170,9 @@ def test_modify_address_on_delivered_order_fails():
     new_addr = {"street": "789 New Rd", "city": "Brooklyn", "state": "NY", "zip": "11201"}
     result = modify_pending_order_address.invoke({"order_id": "#W2222222", "address": new_addr})
     assert "cannot" in result.lower() or "error" in result.lower()
+
+def test_modify_address_accepts_missing_hash():
+    new_addr = {"street": "789 New Rd", "city": "Brooklyn", "state": "NY", "zip": "11201"}
+    result = modify_pending_order_address.invoke({"order_id": "W1111112", "address": new_addr})
+    assert "updated" in result.lower()
+    assert db.ORDERS["#W1111112"]["address"]["street"] == "789 New Rd"

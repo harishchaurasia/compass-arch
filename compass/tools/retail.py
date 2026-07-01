@@ -8,6 +8,11 @@ def _json(obj: dict) -> str:
     return json.dumps(obj, indent=2)
 
 
+def _normalize_order_id(order_id: str) -> str:
+    """Models sometimes drop the leading '#' when composing this argument."""
+    return order_id if order_id.startswith("#") else "#" + order_id
+
+
 @tool
 def find_user_id_by_name_zip(first_name: str, last_name: str, zip: str) -> str:
     """Find a user's ID by their first name, last name, and zip code."""
@@ -40,8 +45,7 @@ def get_user_details(user_id: str) -> str:
 @tool
 def get_order_details(order_id: str) -> str:
     """Get full details for an order including items, status, and address."""
-    if not order_id.startswith("#"):
-        order_id = "#" + order_id
+    order_id = _normalize_order_id(order_id)
     if order_id not in db.ORDERS:
         return f"Order not found: {order_id}"
     return _json(db.ORDERS[order_id])
@@ -50,6 +54,7 @@ def get_order_details(order_id: str) -> str:
 @tool
 def cancel_pending_order(order_id: str) -> str:
     """Cancel a pending order. Only works if the order status is 'pending'."""
+    order_id = _normalize_order_id(order_id)
     if order_id not in db.ORDERS:
         return f"Order not found: {order_id}"
     order = db.ORDERS[order_id]
@@ -62,6 +67,7 @@ def cancel_pending_order(order_id: str) -> str:
 @tool
 def return_delivered_order_items(order_id: str, item_ids: list[str], payment_method_id: str) -> str:
     """Return one or more items from a delivered order."""
+    order_id = _normalize_order_id(order_id)
     if order_id not in db.ORDERS:
         return f"Order not found: {order_id}"
     order = db.ORDERS[order_id]
@@ -73,6 +79,7 @@ def return_delivered_order_items(order_id: str, item_ids: list[str], payment_met
 @tool
 def modify_pending_order_address(order_id: str, address: dict) -> str:
     """Update the shipping address on a pending order."""
+    order_id = _normalize_order_id(order_id)
     if order_id not in db.ORDERS:
         return f"Order not found: {order_id}"
     order = db.ORDERS[order_id]
