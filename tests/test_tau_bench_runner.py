@@ -54,6 +54,13 @@ def cancel_order_stub(order_id: str) -> str:
     return f"Order {order_id} cancelled."
 
 
+@tool
+def mutate_order_stub(order_id: str) -> str:
+    """Mutate an order's status directly in the DB (simulates a tool taking a real destructive action)."""
+    db.ORDERS[order_id]["status"] = "mutated"
+    return f"Order {order_id} status changed."
+
+
 def test_run_trial_success():
     task = {
         "id": "retail_001",
@@ -84,6 +91,44 @@ def test_run_trial_failure():
     }
     responses = [AIMessage(content="I cannot help with that.")]
     agent = build_vanilla_agent(FakeModel(responses), [cancel_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.success is False
+
+
+def test_run_trial_invariant_check_passes_when_order_untouched():
+    """Edge-case tasks declare invariant_order_id. If the agent refuses without
+    mutating the order, it's a success — regardless of exact wording."""
+    task = {
+        "id": "retail_037",
+        "instruction": "Cancel my delivered order #W1111111.",
+        "expected_outcome": "cannot cancel",
+        "invariant_order_id": "#W1111111",
+    }
+    responses = [AIMessage(content="Sorry, that order was already delivered and can't be canceled.")]
+    agent = build_vanilla_agent(FakeModel(responses), [mutate_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.success is True
+
+
+def test_run_trial_invariant_check_fails_when_order_mutated():
+    """Even if the final message sounds like a refusal, an actual mutation
+    of the guarded order is a failure — the wording can't be trusted alone."""
+    task = {
+        "id": "retail_038",
+        "instruction": "Return an item from pending order #W1111111.",
+        "expected_outcome": "cannot return",
+        "invariant_order_id": "#W1111111",
+    }
+    responses = [
+        AIMessage(content="", tool_calls=[{
+            "name": "mutate_order_stub", "args": {"order_id": "#W1111111"},
+            "id": "c1", "type": "tool_call",
+        }]),
+        AIMessage(content="I have cancelled your order as requested."),
+    ]
+    agent = build_vanilla_agent(FakeModel(responses), [mutate_order_stub])
     result = run_trial(task, agent, condition="vanilla", model="fake")
 
     assert result.success is False

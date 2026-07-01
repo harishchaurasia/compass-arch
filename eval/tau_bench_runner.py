@@ -1,6 +1,9 @@
 """τ-bench trial runner. Runs one agent on one task, returns a TrialResult."""
+import copy
+
 from langchain_core.messages import AIMessage, HumanMessage
 
+import compass.tools.retail_db as db
 from eval.trial_store import TrialResult
 
 
@@ -8,6 +11,14 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
     """Run a single trial. Agent must be a compiled LangGraph graph."""
     instruction = task["instruction"]
     expected = task["expected_outcome"]
+
+    # Edge-case tasks (wrong order status) declare invariant_order_id: the
+    # order must come out byte-for-byte identical. Message text is too easy
+    # to paraphrase ("cannot be canceled" vs "cannot cancel") to grade
+    # reliably, and it can't catch a wrong destructive action hiding behind
+    # a reasonable-sounding reply.
+    invariant_order_id = task.get("invariant_order_id")
+    order_before = copy.deepcopy(db.ORDERS[invariant_order_id]) if invariant_order_id else None
 
     init_state: dict = {
         "messages": [HumanMessage(content=instruction)],
@@ -22,7 +33,10 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
     last_msg = final_state["messages"][-1]
     final_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
-    success = expected.lower() in final_text.lower()
+    if invariant_order_id:
+        success = db.ORDERS[invariant_order_id] == order_before
+    else:
+        success = expected.lower() in final_text.lower()
 
     # step count differs by agent type
     steps = (

@@ -219,24 +219,28 @@
     "id": "retail_037",
     "domain": "retail",
     "instruction": "I need to cancel my USB Mouse order #W4444445. My name is David Kim, zip 98101.",
-    "expected_outcome": "cannot cancel"
+    "expected_outcome": "cannot cancel",
+    "invariant_order_id": "#W4444445"
   },
   {
     "id": "retail_038",
     "domain": "retail",
     "instruction": "I want to return my Smart Speaker from order #W2222223. My email is marcus@example.com.",
-    "expected_outcome": "cannot return"
+    "expected_outcome": "cannot return",
+    "invariant_order_id": "#W2222223"
   },
   {
     "id": "retail_039",
     "domain": "retail",
     "instruction": "Please update the address on my Gaming Headset order #W7777778 to 200 Post Oak Blvd, Houston, TX 77056. My name is Carlos Rivera, zip 77001.",
-    "expected_outcome": "cannot modify"
+    "expected_outcome": "cannot modify",
+    "invariant_order_id": "#W7777778"
   },
   {
     "id": "retail_040",
     "domain": "retail",
     "instruction": "Cancel my Bluetooth Speaker order #W1111113 please. My name is Sofia Chen, zip 10001.",
-    "expected_outcome": "cannot cancel"
+    "expected_outcome": "cannot cancel",
+    "invariant_order_id": "#W1111113"
   }
 ]
