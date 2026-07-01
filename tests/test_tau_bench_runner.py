@@ -112,6 +112,52 @@ def test_run_trial_invariant_check_passes_when_order_untouched():
     assert result.success is True
 
 
+def test_run_trial_expected_order_state_passes_when_db_matches():
+    """Mutating tasks (cancel/return/update) declare expected_order_state.
+    Success is judged on what actually happened in the DB, not on whether the
+    final message contains the right word."""
+    task = {
+        "id": "retail_001",
+        "instruction": "Cancel order #W1111111.",
+        "expected_outcome": "cancelled",
+        "expected_order_state": {"order_id": "#W1111111", "status": "cancelled"},
+    }
+
+    @tool
+    def cancel_and_set_status(order_id: str) -> str:
+        """Cancel the order."""
+        db.ORDERS[order_id]["status"] = "cancelled"
+        return "done"
+
+    agent = build_vanilla_agent(FakeModel([
+        AIMessage(content="", tool_calls=[{
+            "name": "cancel_and_set_status", "args": {"order_id": "#W1111111"},
+            "id": "c1", "type": "tool_call",
+        }]),
+        AIMessage(content="All set, you're good to go."),
+    ]), [cancel_and_set_status])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.success is True
+
+
+def test_run_trial_expected_order_state_fails_when_agent_only_claims_success():
+    """A model that hallucinates success without ever calling the tool must
+    be graded a failure, even if its final message says exactly the right
+    words."""
+    task = {
+        "id": "retail_001",
+        "instruction": "Cancel order #W1111111.",
+        "expected_outcome": "cancelled",
+        "expected_order_state": {"order_id": "#W1111111", "status": "cancelled"},
+    }
+    responses = [AIMessage(content="Sure, I've cancelled order #W1111111 for you.")]
+    agent = build_vanilla_agent(FakeModel(responses), [cancel_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.success is False
+
+
 def test_run_trial_invariant_check_fails_when_order_mutated():
     """Even if the final message sounds like a refusal, an actual mutation
     of the guarded order is a failure — the wording can't be trusted alone."""

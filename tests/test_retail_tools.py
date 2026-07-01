@@ -142,6 +142,17 @@ def test_return_delivered_items_succeeds():
     })
     assert "return" in result.lower()
 
+def test_return_delivered_items_marks_order_returned():
+    """A successful return must be reflected in the order record — otherwise
+    there's no way to verify a return actually happened versus the agent
+    just claiming it did."""
+    return_delivered_order_items.invoke({
+        "order_id": "#W2222222",
+        "item_ids": ["item_hp_002"],
+        "payment_method_id": "card_5678",
+    })
+    assert db.ORDERS["#W2222222"]["status"] == "returned"
+
 def test_return_pending_order_fails():
     result = return_delivered_order_items.invoke({
         "order_id": "#W1111111",

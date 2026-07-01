@@ -10,6 +10,7 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 
+import compass.tools.retail_db as db
 from compass.agent_compass import build_compass_agent
 from compass.agent_vanilla import build_vanilla_agent
 from compass.tools.retail import (
@@ -54,6 +55,7 @@ def main():
         for condition, agent in [("vanilla", vanilla), ("compass", compass)]:
             print(f"  Running {task['id']} / {condition} ... ", end="", flush=True)
             try:
+                db.reset_db()  # each trial must start from canonical state, not a prior trial's mutations
                 result = run_trial(task, agent, condition=condition, model=MODEL_NAME)
                 save_trial(result, DB_PATH)
                 status = "✓" if result.success else "✗"

@@ -33,8 +33,23 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
     last_msg = final_state["messages"][-1]
     final_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
+    expected_order_state = task.get("expected_order_state")
+
     if invariant_order_id:
         success = db.ORDERS[invariant_order_id] == order_before
+    elif expected_order_state:
+        # Mutating tasks (cancel/return/update): judge success on what the DB
+        # actually shows afterward, not on whether the final message contains
+        # the right word. A model that says "cancelled!" without calling the
+        # tool must fail; a model that cancels it via unexpected wording must
+        # pass.
+        oid = expected_order_state["order_id"]
+        after = db.ORDERS.get(oid, {})
+        success = all(
+            after.get(key) == value
+            for key, value in expected_order_state.items()
+            if key != "order_id"
+        )
     else:
         success = expected.lower() in final_text.lower()
 

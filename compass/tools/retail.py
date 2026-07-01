@@ -73,6 +73,7 @@ def return_delivered_order_items(order_id: str, item_ids: list[str], payment_met
     order = db.ORDERS[order_id]
     if order["status"] != "delivered":
         return f"Cannot return items from order {order_id}: status is '{order['status']}', not 'delivered'."
+    order["status"] = "returned"
     return f"Return processed for order {order_id}, items {item_ids}. Refund to payment method {payment_method_id}."
 
 
