@@ -3,11 +3,10 @@
 We use a FakeModel instead of a real LLM so tests never hit an API.
 FakeModel returns preset AIMessage responses in order.
 """
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
-from compass.agent_vanilla import VanillaState, build_vanilla_agent
+from compass.agent_vanilla import build_vanilla_agent
 
 
 @tool

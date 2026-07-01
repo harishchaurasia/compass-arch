@@ -5,7 +5,7 @@ The success check is: does the final message contain the expected_outcome substr
 """
 import copy
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 from langchain_core.tools import tool
 
 import compass.tools.retail_db as db
@@ -156,6 +156,99 @@ def test_run_trial_expected_order_state_fails_when_agent_only_claims_success():
     result = run_trial(task, agent, condition="vanilla", model="fake")
 
     assert result.success is False
+
+
+def test_run_trial_records_mutated_order_ids():
+    """Any actual change to db.ORDERS during the trial must be captured, so
+    compound_failure_rate can tell 'failed loudly' from 'failed destructively'."""
+    task = {
+        "id": "retail_001",
+        "instruction": "Cancel order #W1111111.",
+        "expected_outcome": "cancelled",
+    }
+    responses = [
+        AIMessage(content="", tool_calls=[{
+            "name": "mutate_order_stub", "args": {"order_id": "#W1111111"},
+            "id": "c1", "type": "tool_call",
+        }]),
+        AIMessage(content="Done."),
+    ]
+    agent = build_vanilla_agent(FakeModel(responses), [mutate_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.mutated_order_ids == ["#W1111111"]
+
+
+def test_run_trial_mutated_order_ids_empty_when_read_only():
+    task = {
+        "id": "retail_004",
+        "instruction": "What is the status of order #W1111111?",
+        "expected_outcome": "pending",
+    }
+    responses = [AIMessage(content="Order #W1111111 is pending.")]
+    agent = build_vanilla_agent(FakeModel(responses), [cancel_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.mutated_order_ids == []
+
+
+def test_run_trial_compass_records_calibrated_success_probs():
+    """success_probs must replay calibrate() over the step history exactly as
+    the agent's route edge computed it at each decision point."""
+    from compass.agent_compass import CompassAction, CompassStep, build_compass_agent
+
+    class FakeCompassModel:
+        def __init__(self, steps):
+            self._iter = iter(steps)
+
+        def with_structured_output(self, schema, **kwargs):
+            return self
+
+        def invoke(self, messages):
+            return {"parsed": next(self._iter), "raw": None, "parsing_error": None}
+
+    @tool
+    def read_order(order_id: str) -> str:
+        """Read an order (read-only)."""
+        return "pending"
+
+    steps = [
+        CompassStep(
+            reasoning="Check the order.",
+            action=CompassAction(tool="read_order", args={"order_id": "#W1111111"}),
+            confidence=0.8,
+            risk_level="low",
+        ),
+        CompassStep(
+            reasoning="Done.",
+            action=CompassAction(final_answer="Order #W1111111 is pending."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    task = {
+        "id": "retail_004",
+        "instruction": "What is the status of order #W1111111?",
+        "expected_outcome": "pending",
+    }
+    agent = build_compass_agent(FakeCompassModel(steps), [read_order])
+    result = run_trial(task, agent, condition="compass", model="fake")
+
+    # 2 steps, no trajectory penalties apply → success_prob == raw confidence
+    assert result.success_probs == [0.8, 0.9]
+
+
+def test_run_trial_vanilla_success_probs_empty():
+    task = {
+        "id": "retail_004",
+        "instruction": "What is the status of order #W1111111?",
+        "expected_outcome": "pending",
+    }
+    responses = [AIMessage(content="Order #W1111111 is pending.")]
+    agent = build_vanilla_agent(FakeModel(responses), [cancel_order_stub])
+    result = run_trial(task, agent, condition="vanilla", model="fake")
+
+    assert result.success_probs == []
 
 
 def test_run_trial_invariant_check_fails_when_order_mutated():

@@ -3,13 +3,10 @@
 FakeCompassModel supports with_structured_output() and returns CompassStep
 objects in sequence — no real LLM calls.
 """
-import copy
-import pytest
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 
-import compass.tools.retail_db as db
-from compass.agent_compass import CompassAction, CompassState, CompassStep, build_compass_agent
+from compass.agent_compass import CompassAction, CompassStep, build_compass_agent
 
 # ── fake model ────────────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ objects — things like how many steps have been taken, whether the agent is
 looping, and how long since it last tried something new.
 """
 from compass.agent_compass import CompassAction, CompassStep
-from compass.trajectory import TrajectoryFeatures, extract_features
+from compass.trajectory import extract_features
 
 
 def _tool_step(tool: str, confidence: float = 0.9, risk: str = "medium") -> CompassStep:

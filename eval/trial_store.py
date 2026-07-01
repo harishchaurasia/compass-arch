@@ -15,6 +15,8 @@ class TrialResult:
     abstained: bool
     confidence_scores: list[float]   # Compass only; empty list for vanilla
     final_message: str
+    success_probs: list[float] = field(default_factory=list)    # calibrated, Compass only
+    mutated_order_ids: list[str] = field(default_factory=list)  # orders changed during trial
 
 
 _CREATE = """
@@ -28,22 +30,43 @@ CREATE TABLE IF NOT EXISTS trials (
     abstained         INTEGER NOT NULL,
     confidence_scores TEXT NOT NULL,
     final_message     TEXT NOT NULL,
+    success_probs     TEXT NOT NULL DEFAULT '[]',
+    mutated_order_ids TEXT NOT NULL DEFAULT '[]',
     created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """
 
+# Columns added after the Phase 2 pilot; ALTER is a no-op error on newer DBs.
+_MIGRATIONS = [
+    "ALTER TABLE trials ADD COLUMN success_probs TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE trials ADD COLUMN mutated_order_ids TEXT NOT NULL DEFAULT '[]'",
+]
+
 _INSERT = """
-INSERT INTO trials (task_id, condition, model, success, steps, abstained, confidence_scores, final_message)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO trials (task_id, condition, model, success, steps, abstained,
+                    confidence_scores, final_message, success_probs, mutated_order_ids)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-_SELECT = "SELECT task_id, condition, model, success, steps, abstained, confidence_scores, final_message FROM trials"
+_SELECT = (
+    "SELECT task_id, condition, model, success, steps, abstained,"
+    " confidence_scores, final_message, success_probs, mutated_order_ids FROM trials"
+)
+
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(_CREATE)
+    for migration in _MIGRATIONS:
+        try:
+            conn.execute(migration)
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 def save_trial(result: TrialResult, db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
-        conn.execute(_CREATE)
+        _ensure_schema(conn)
         conn.execute(_INSERT, (
             result.task_id,
             result.condition,
@@ -53,6 +76,8 @@ def save_trial(result: TrialResult, db_path: Path) -> None:
             int(result.abstained),
             json.dumps(result.confidence_scores),
             result.final_message,
+            json.dumps(result.success_probs),
+            json.dumps(result.mutated_order_ids),
         ))
 
 
@@ -60,6 +85,7 @@ def load_trials(db_path: Path) -> list[TrialResult]:
     if not db_path.exists():
         return []
     with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
         rows = conn.execute(_SELECT).fetchall()
     return [
         TrialResult(
@@ -71,6 +97,8 @@ def load_trials(db_path: Path) -> list[TrialResult]:
             abstained=bool(r[5]),
             confidence_scores=json.loads(r[6]),
             final_message=r[7],
+            success_probs=json.loads(r[8]),
+            mutated_order_ids=json.loads(r[9]),
         )
         for r in rows
     ]

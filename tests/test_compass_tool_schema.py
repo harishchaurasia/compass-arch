@@ -3,7 +3,8 @@ and that tools handle common model mis-formatting gracefully.
 """
 from langchain_core.tools import tool
 import compass.tools.retail_db as db
-import copy, pytest
+import copy
+import pytest
 
 from compass.agent_compass import _system_prompt
 from compass.tools.retail import get_order_details
