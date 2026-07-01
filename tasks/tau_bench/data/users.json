@@ -5,7 +5,7 @@
     "zip": "10001",
     "address": {"street": "123 Main St", "city": "New York", "state": "NY", "zip": "10001"},
     "payment_methods": {"card_1234": {"type": "credit_card", "last4": "1234"}},
-    "orders": ["#W1111111", "#W1111112"]
+    "orders": ["#W1111111", "#W1111112", "#W1111113"]
   },
   "marcus_johnson_90210": {
     "name": {"first_name": "Marcus", "last_name": "Johnson"},
@@ -13,7 +13,7 @@
     "zip": "90210",
     "address": {"street": "456 Oak Ave", "city": "Beverly Hills", "state": "CA", "zip": "90210"},
     "payment_methods": {"card_5678": {"type": "credit_card", "last4": "5678"}},
-    "orders": ["#W2222222"]
+    "orders": ["#W2222222", "#W2222223"]
   },
   "elena_park_60601": {
     "name": {"first_name": "Elena", "last_name": "Park"},
@@ -21,7 +21,7 @@
     "zip": "60601",
     "address": {"street": "200 Michigan Ave", "city": "Chicago", "state": "IL", "zip": "60601"},
     "payment_methods": {"card_9012": {"type": "credit_card", "last4": "9012"}},
-    "orders": ["#W3333333"]
+    "orders": ["#W3333333", "#W3333334"]
   },
   "david_kim_98101": {
     "name": {"first_name": "David", "last_name": "Kim"},
@@ -29,6 +29,54 @@
     "zip": "98101",
     "address": {"street": "500 Pine St", "city": "Seattle", "state": "WA", "zip": "98101"},
     "payment_methods": {"card_3456": {"type": "credit_card", "last4": "3456"}},
-    "orders": ["#W4444444"]
+    "orders": ["#W4444444", "#W4444445", "#W4444446"]
+  },
+  "james_wilson_33101": {
+    "name": {"first_name": "James", "last_name": "Wilson"},
+    "email": "james@example.com",
+    "zip": "33101",
+    "address": {"street": "789 Brickell Ave", "city": "Miami", "state": "FL", "zip": "33101"},
+    "payment_methods": {"card_7890": {"type": "credit_card", "last4": "7890"}},
+    "orders": ["#W5555555", "#W5555556", "#W5555557"]
+  },
+  "aisha_patel_10002": {
+    "name": {"first_name": "Aisha", "last_name": "Patel"},
+    "email": "aisha@example.com",
+    "zip": "10002",
+    "address": {"street": "301 Canal St", "city": "New York", "state": "NY", "zip": "10002"},
+    "payment_methods": {"card_2345": {"type": "credit_card", "last4": "2345"}},
+    "orders": ["#W6666666", "#W6666667", "#W6666668"]
+  },
+  "carlos_rivera_77001": {
+    "name": {"first_name": "Carlos", "last_name": "Rivera"},
+    "email": "carlos@example.com",
+    "zip": "77001",
+    "address": {"street": "1000 Main St", "city": "Houston", "state": "TX", "zip": "77001"},
+    "payment_methods": {"card_6789": {"type": "credit_card", "last4": "6789"}},
+    "orders": ["#W7777777", "#W7777778", "#W7777779"]
+  },
+  "mei_zhang_94102": {
+    "name": {"first_name": "Mei", "last_name": "Zhang"},
+    "email": "mei@example.com",
+    "zip": "94102",
+    "address": {"street": "55 Market St", "city": "San Francisco", "state": "CA", "zip": "94102"},
+    "payment_methods": {"card_0123": {"type": "credit_card", "last4": "0123"}},
+    "orders": ["#W8888888", "#W8888889", "#W8888890"]
+  },
+  "tom_nguyen_85001": {
+    "name": {"first_name": "Tom", "last_name": "Nguyen"},
+    "email": "tom@example.com",
+    "zip": "85001",
+    "address": {"street": "2 Central Ave", "city": "Phoenix", "state": "AZ", "zip": "85001"},
+    "payment_methods": {"card_4567": {"type": "credit_card", "last4": "4567"}},
+    "orders": ["#W9999998", "#W9999999"]
+  },
+  "sara_lee_30301": {
+    "name": {"first_name": "Sara", "last_name": "Lee"},
+    "email": "sara@example.com",
+    "zip": "30301",
+    "address": {"street": "100 Peachtree St", "city": "Atlanta", "state": "GA", "zip": "30301"},
+    "payment_methods": {"card_8901": {"type": "credit_card", "last4": "8901"}},
+    "orders": ["#W0000001", "#W0000002", "#W0000003"]
   }
 }

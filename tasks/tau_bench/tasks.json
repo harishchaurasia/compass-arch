@@ -3,59 +3,240 @@
     "id": "retail_001",
     "domain": "retail",
     "instruction": "I need to cancel my pending laptop order. My name is Sofia Chen and my zip code is 10001. The order number is #W1111111.",
-    "user_id": "sofia_chen_10001",
-    "actions": [
-      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "Sofia", "last_name": "Chen", "zip": "10001"}},
-      {"name": "get_order_details", "kwargs": {"order_id": "#W1111111"}},
-      {"name": "cancel_pending_order", "kwargs": {"order_id": "#W1111111"}}
-    ],
     "expected_outcome": "cancelled"
   },
   {
     "id": "retail_002",
     "domain": "retail",
     "instruction": "I want to return the noise-cancelling headphones I received. My email is marcus@example.com. Order number is #W2222222.",
-    "user_id": "marcus_johnson_90210",
-    "actions": [
-      {"name": "find_user_id_by_email", "kwargs": {"email": "marcus@example.com"}},
-      {"name": "get_order_details", "kwargs": {"order_id": "#W2222222"}},
-      {"name": "return_delivered_order_items", "kwargs": {"order_id": "#W2222222", "item_ids": ["item_hp_002"], "payment_method_id": "card_5678"}}
-    ],
     "expected_outcome": "return"
   },
   {
     "id": "retail_003",
     "domain": "retail",
     "instruction": "Please update the shipping address on my pending headphones order #W1111112 to 789 New Rd, Brooklyn, NY 11201. I'm Sofia Chen, zip 10001.",
-    "user_id": "sofia_chen_10001",
-    "actions": [
-      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "Sofia", "last_name": "Chen", "zip": "10001"}},
-      {"name": "get_order_details", "kwargs": {"order_id": "#W1111112"}},
-      {"name": "modify_pending_order_address", "kwargs": {"order_id": "#W1111112", "address": {"street": "789 New Rd", "city": "Brooklyn", "state": "NY", "zip": "11201"}}}
-    ],
     "expected_outcome": "updated"
   },
   {
     "id": "retail_004",
     "domain": "retail",
     "instruction": "What are the details of order #W3333333? My name is Elena Park, zip 60601.",
-    "user_id": "elena_park_60601",
-    "actions": [
-      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "Elena", "last_name": "Park", "zip": "60601"}},
-      {"name": "get_order_details", "kwargs": {"order_id": "#W3333333"}}
-    ],
     "expected_outcome": "running shoes"
   },
   {
     "id": "retail_005",
     "domain": "retail",
-    "instruction": "I want to cancel order #W4444444 but I'm not sure if it's still pending. Can you check and cancel if possible? I'm David Kim, zip 98101.",
-    "user_id": "david_kim_98101",
-    "actions": [
-      {"name": "find_user_id_by_name_zip", "kwargs": {"first_name": "David", "last_name": "Kim", "zip": "98101"}},
-      {"name": "get_order_details", "kwargs": {"order_id": "#W4444444"}},
-      {"name": "cancel_pending_order", "kwargs": {"order_id": "#W4444444"}}
-    ],
+    "instruction": "I want to cancel order #W4444444. I'm not sure if it's still pending — please check and cancel if possible. I'm David Kim, zip 98101.",
     "expected_outcome": "cancelled"
+  },
+  {
+    "id": "retail_006",
+    "domain": "retail",
+    "instruction": "Can you cancel my 4K Monitor order #W5555555? My name is James Wilson, zip 33101.",
+    "expected_outcome": "cancelled"
+  },
+  {
+    "id": "retail_007",
+    "domain": "retail",
+    "instruction": "I need to cancel my Standing Desk order #W6666666. My email is aisha@example.com.",
+    "expected_outcome": "cancelled"
+  },
+  {
+    "id": "retail_008",
+    "domain": "retail",
+    "instruction": "Please cancel my Gaming Mouse order #W7777777. My name is Carlos Rivera, zip 77001.",
+    "expected_outcome": "cancelled"
+  },
+  {
+    "id": "retail_009",
+    "domain": "retail",
+    "instruction": "I'd like to cancel my Tablet Pro order #W8888888. My email is mei@example.com.",
+    "expected_outcome": "cancelled"
+  },
+  {
+    "id": "retail_010",
+    "domain": "retail",
+    "instruction": "Cancel my External SSD order #W9999998 please. My name is Tom Nguyen, zip 85001.",
+    "expected_outcome": "cancelled"
+  },
+  {
+    "id": "retail_011",
+    "domain": "retail",
+    "instruction": "I need to cancel order #W0000001 for the earbuds. My email is sara@example.com.",
+    "expected_outcome": "cancelled"
+  },
+  {
+    "id": "retail_012",
+    "domain": "retail",
+    "instruction": "I received my Trail Running Shoes but want to return them. My name is Elena Park, zip 60601. Order is #W3333333.",
+    "expected_outcome": "return"
+  },
+  {
+    "id": "retail_013",
+    "domain": "retail",
+    "instruction": "I want to return the USB-C Hub I got. My email is james@example.com. Order number #W5555556.",
+    "expected_outcome": "return"
+  },
+  {
+    "id": "retail_014",
+    "domain": "retail",
+    "instruction": "I'd like to return the Ergonomic Chair from order #W6666667. My name is Aisha Patel, zip 10002.",
+    "expected_outcome": "return"
+  },
+  {
+    "id": "retail_015",
+    "domain": "retail",
+    "instruction": "Please process a return for my Gaming Headset, order #W7777778. My email is carlos@example.com.",
+    "expected_outcome": "return"
+  },
+  {
+    "id": "retail_016",
+    "domain": "retail",
+    "instruction": "I want to return my Smart Watch from order #W8888889. My name is Mei Zhang, zip 94102.",
+    "expected_outcome": "return"
+  },
+  {
+    "id": "retail_017",
+    "domain": "retail",
+    "instruction": "Return my Wireless Keyboard from order #W9999999 please. My email is tom@example.com.",
+    "expected_outcome": "return"
+  },
+  {
+    "id": "retail_018",
+    "domain": "retail",
+    "instruction": "I received a Bluetooth Speaker in order #W1111113 and want to return it. My email is sofia@example.com.",
+    "expected_outcome": "return"
+  },
+  {
+    "id": "retail_019",
+    "domain": "retail",
+    "instruction": "Update the shipping address on my Yoga Mat order #W3333334 to 45 Oak St, Evanston, IL 60201. My email is elena@example.com.",
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_020",
+    "domain": "retail",
+    "instruction": "Please change the delivery address on order #W5555557 to 22 Coral Way, Miami, FL 33145. My email is james@example.com.",
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_021",
+    "domain": "retail",
+    "instruction": "Update shipping address on my Monitor Stand order #W6666668 to 10 Spring St, Brooklyn, NY 11201. My name is Aisha Patel, zip 10002.",
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_022",
+    "domain": "retail",
+    "instruction": "Change the shipping address for my Gaming Controller order #W7777779 to 500 Westheimer Rd, Houston, TX 77056. My email is carlos@example.com.",
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_023",
+    "domain": "retail",
+    "instruction": "Update address on my Drawing Pad order #W8888890 to 300 Valencia St, San Francisco, CA 94103. My name is Mei Zhang, zip 94102.",
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_024",
+    "domain": "retail",
+    "instruction": "Change the delivery address for order #W0000003 to 200 North Ave, Atlanta, GA 30318. My email is sara@example.com.",
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_025",
+    "domain": "retail",
+    "instruction": "Update the shipping address on my 4K Webcam order #W4444446 to 123 Capitol Hill, Seattle, WA 98102. My name is David Kim, zip 98101.",
+    "expected_outcome": "updated"
+  },
+  {
+    "id": "retail_026",
+    "domain": "retail",
+    "instruction": "What is the status and price of my 4K Monitor order #W5555555? My name is James Wilson, zip 33101.",
+    "expected_outcome": "Monitor"
+  },
+  {
+    "id": "retail_027",
+    "domain": "retail",
+    "instruction": "Can you pull up the details on order #W6666667? My email is aisha@example.com.",
+    "expected_outcome": "Chair"
+  },
+  {
+    "id": "retail_028",
+    "domain": "retail",
+    "instruction": "What's in order #W7777778? My name is Carlos Rivera, zip 77001.",
+    "expected_outcome": "Headset"
+  },
+  {
+    "id": "retail_029",
+    "domain": "retail",
+    "instruction": "Show me the details of order #W8888888. My email is mei@example.com.",
+    "expected_outcome": "Tablet"
+  },
+  {
+    "id": "retail_030",
+    "domain": "retail",
+    "instruction": "What are the details for order #W9999999? My name is Tom Nguyen, zip 85001.",
+    "expected_outcome": "Keyboard"
+  },
+  {
+    "id": "retail_031",
+    "domain": "retail",
+    "instruction": "Can you look up order #W0000002 for me? My email is sara@example.com.",
+    "expected_outcome": "Fitness"
+  },
+  {
+    "id": "retail_032",
+    "domain": "retail",
+    "instruction": "What's the status of my order #W4444445? My name is David Kim, zip 98101.",
+    "expected_outcome": "Mouse"
+  },
+  {
+    "id": "retail_033",
+    "domain": "retail",
+    "instruction": "Can you pull up my account information? My name is Sofia Chen, zip 10001.",
+    "expected_outcome": "sofia@example.com"
+  },
+  {
+    "id": "retail_034",
+    "domain": "retail",
+    "instruction": "I need to see my profile details. My email is marcus@example.com.",
+    "expected_outcome": "Beverly Hills"
+  },
+  {
+    "id": "retail_035",
+    "domain": "retail",
+    "instruction": "Can you show me my account details? My name is James Wilson, zip 33101.",
+    "expected_outcome": "james@example.com"
+  },
+  {
+    "id": "retail_036",
+    "domain": "retail",
+    "instruction": "Please look up my account. My email is aisha@example.com.",
+    "expected_outcome": "New York"
+  },
+  {
+    "id": "retail_037",
+    "domain": "retail",
+    "instruction": "I need to cancel my USB Mouse order #W4444445. My name is David Kim, zip 98101.",
+    "expected_outcome": "cannot cancel"
+  },
+  {
+    "id": "retail_038",
+    "domain": "retail",
+    "instruction": "I want to return my Smart Speaker from order #W2222223. My email is marcus@example.com.",
+    "expected_outcome": "cannot return"
+  },
+  {
+    "id": "retail_039",
+    "domain": "retail",
+    "instruction": "Please update the address on my Gaming Headset order #W7777778 to 200 Post Oak Blvd, Houston, TX 77056. My name is Carlos Rivera, zip 77001.",
+    "expected_outcome": "cannot modify"
+  },
+  {
+    "id": "retail_040",
+    "domain": "retail",
+    "instruction": "Cancel my Bluetooth Speaker order #W1111113 please. My name is Sofia Chen, zip 10001.",
+    "expected_outcome": "cannot cancel"
   }
 ]
