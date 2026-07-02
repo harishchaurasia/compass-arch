@@ -8,7 +8,10 @@ Writes results to results/trials.db and prints a summary table.
 import json
 from pathlib import Path
 
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+
+load_dotenv()  # reads OPENAI_API_KEY from prj/.env (gitignored)
 
 import compass.tools.retail_db as db
 from compass.agent_compass import build_compass_agent
