@@ -58,6 +58,8 @@ At every agent step, the model is required to output a structured JSON object:
 
 Enforced via LangChain structured output / Pydantic schema.
 
+**Amendment (Phase 2 pilot finding):** verbalized risk is unreliable — across 168 pilot steps (gpt-4o-mini) the model emitted zero "high" labels, including on 25 trials that mutated the database, so verbalized risk alone can never reach the abstain branch. Each tool therefore carries a **static risk class** (`tool_risk` map passed to `build_compass_agent`; DB-mutating retail tools are `high`, lookups `low`), and the policy gates on `effective_risk = max(verbalized risk_level, tool class)`. The verbalized label is kept as a signal that can only *raise* risk, never lower it.
+
 ### Component 2 — Trajectory feature aggregation
 
 Per-step verbalized confidence alone is unreliable. RLHF-trained frontier models often emit confidence in a narrow band (0.8–0.95) regardless of actual correctness. So we don't rely on it alone — we also extract structural features from the running trajectory:
@@ -84,7 +86,7 @@ This is where calibration becomes _behavior_. The trajectory success probability
 | High   | ≥ T_high   | Execute with explicit verification step (model re-confirms intent before acting) |
 | High   | < T_high   | **Abstain**: return "uncertain, escalating" with full reasoning trace            |
 
-T_med and T_high are tuned on the dev split.
+T_med and T_high are tuned on the dev split. Risk in this table is the _effective_ risk (see Component 1 amendment). The "execute with explicit verification" row is implemented as a `confirm` graph node: the model is told what high-risk action it is about to take, must re-read the user's request, and either re-affirms the action (which then executes) or changes course.
 
 The two thresholds matter because abstention is _expensive_ in terms of task success rate but _cheap_ in terms of compound failures. A well-tuned Compass abstains often enough to catch its mistakes but not so often that it becomes useless.
 
@@ -246,7 +248,7 @@ Agile, build-as-we-go. Four loose phases, ~20 hours each, ~80 hours total. Phase
 
 ## Open questions to resolve during the build
 
-- **Verbalized confidence flatness.** If frontier models output near-constant confidence regardless of task difficulty, the design needs adjustment in Phase 2 — more weight on trajectory features, possibly multi-sample uncertainty on high-risk steps despite token cost.
+- **Verbalized confidence flatness.** ~~If frontier models output near-constant confidence regardless of task difficulty, the design needs adjustment in Phase 2.~~ **Answered by the Phase 2 pilot (gpt-4o-mini):** confidence is flat (0.8–1.0, mode 0.9) and verbalized risk never reaches "high". Adjustments made: static tool risk classes + confirm step (see Component 1/3). Trajectory features also never fired on short 3–5 step trajectories — they need harder, longer tasks to matter.
 - **Threshold tuning.** A 5-task dev split is small. May need cross-validation across τ-bench domains. Report sensitivity analysis in the writeup.
 - **Custom MCP task design.** Should happen _after_ Phase 2 pilot reveals which failure modes are most informative to amplify.
 - **Local model architecture.** Qwen 2.5 7B is the planning baseline. If instruction-following is too weak for tool-use agent tasks, swap to Llama 3.1 8B or similar.
