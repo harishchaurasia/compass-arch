@@ -238,6 +238,52 @@ def test_run_trial_compass_records_calibrated_success_probs():
     assert result.success_probs == [0.8, 0.9]
 
 
+def test_run_trial_compass_records_risk_levels():
+    """Per-step risk_level must be persisted so we can analyze whether the
+    model labels destructive actions high-risk (i.e. whether the policy can
+    ever gate them)."""
+    from compass.agent_compass import CompassAction, CompassStep, build_compass_agent
+
+    class FakeCompassModel:
+        def __init__(self, steps):
+            self._iter = iter(steps)
+
+        def with_structured_output(self, schema, **kwargs):
+            return self
+
+        def invoke(self, messages):
+            return {"parsed": next(self._iter), "raw": None, "parsing_error": None}
+
+    @tool
+    def cancel_order(order_id: str) -> str:
+        """Cancel an order (destructive)."""
+        return "cancelled"
+
+    steps = [
+        CompassStep(
+            reasoning="Cancelling as asked.",
+            action=CompassAction(tool="cancel_order", args={"order_id": "#W1111111"}),
+            confidence=0.9,
+            risk_level="high",
+        ),
+        CompassStep(
+            reasoning="Done.",
+            action=CompassAction(final_answer="Cancelled."),
+            confidence=0.95,
+            risk_level="low",
+        ),
+    ]
+    task = {
+        "id": "retail_001",
+        "instruction": "Cancel order #W1111111.",
+        "expected_outcome": "cancelled",
+    }
+    agent = build_compass_agent(FakeCompassModel(steps), [cancel_order])
+    result = run_trial(task, agent, condition="compass", model="fake")
+
+    assert result.risk_levels == ["high", "low"]
+
+
 def test_run_trial_vanilla_success_probs_empty():
     task = {
         "id": "retail_004",

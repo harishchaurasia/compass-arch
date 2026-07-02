@@ -86,6 +86,23 @@ def test_new_fields_default_to_empty_lists(db):
     r = load_trials(db)[0]
     assert r.success_probs == []
     assert r.mutated_order_ids == []
+    assert r.risk_levels == []
+
+
+def test_risk_levels_round_trip(db):
+    trial = TrialResult(
+        task_id="retail_006",
+        condition="compass",
+        model="claude-sonnet-4-6",
+        success=True,
+        steps=2,
+        abstained=False,
+        confidence_scores=[0.9, 0.95],
+        final_message="Done.",
+        risk_levels=["high", "low"],
+    )
+    save_trial(trial, db)
+    assert load_trials(db)[0].risk_levels == ["high", "low"]
 
 
 def test_migrates_legacy_db_without_new_columns(db):

@@ -91,9 +91,13 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
             s.confidence for s in compass_steps if hasattr(s, "confidence")
         ]
         success_probs = _replay_success_probs(compass_steps)
+        risk_levels = [
+            s.risk_level for s in compass_steps if hasattr(s, "risk_level")
+        ]
     else:
         confidence_scores = []
         success_probs = []
+        risk_levels = []
 
     return TrialResult(
         task_id=task["id"],
@@ -106,4 +110,5 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
         final_message=final_text,
         success_probs=success_probs,
         mutated_order_ids=mutated_order_ids,
+        risk_levels=risk_levels,
     )
