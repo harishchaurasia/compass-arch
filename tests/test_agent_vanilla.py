@@ -92,3 +92,23 @@ def test_agent_stops_at_max_steps():
     state = agent.invoke({"messages": [HumanMessage(content="Go forever")], "steps": 0})
 
     assert state["steps"] >= 2
+
+
+def test_policy_prepended_as_system_message():
+    """τ-bench tasks require the retail policy wiki in the agent's context."""
+    seen = []
+
+    class CapturingModel:
+        def bind_tools(self, tools):
+            return self
+
+        def invoke(self, messages):
+            seen.append(list(messages))
+            return AIMessage(content="ok")
+
+    agent = build_vanilla_agent(CapturingModel(), [], policy="POLICY: authenticate first.")
+    agent.invoke({"messages": [HumanMessage(content="hi")], "steps": 0})
+
+    first = seen[0][0]
+    assert "authenticate first" in first.content
+    assert first.type == "system"

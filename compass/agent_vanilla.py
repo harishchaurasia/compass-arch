@@ -2,7 +2,7 @@
 from typing import Annotated, TypedDict
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -21,12 +21,16 @@ def build_vanilla_agent(
     model: BaseChatModel,
     tools: list[BaseTool],
     max_steps: int = 20,
+    policy: str | None = None,
 ) -> StateGraph:
+    """policy, when given, is prepended as a system message (e.g. the τ-bench
+    retail policy wiki that graded behaviour depends on)."""
     model_with_tools = model.bind_tools(tools)
     tool_node = ToolNode(tools)
+    system = [SystemMessage(content=policy)] if policy else []
 
     def call_model(state: VanillaState) -> dict:
-        response = model_with_tools.invoke(state["messages"])
+        response = model_with_tools.invoke(system + list(state["messages"]))
         return {"messages": [response], "steps": state["steps"] + 1}
 
     def should_continue(state: VanillaState) -> str:

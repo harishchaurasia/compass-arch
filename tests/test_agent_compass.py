@@ -331,3 +331,27 @@ def test_execute_resets_self_verify_count():
 
     assert state["abstained"] is False
     assert "All done." in state["messages"][-1].content
+
+
+def test_policy_included_in_system_prompt():
+    """τ-bench tasks require the retail policy wiki in the agent's context."""
+    seen = []
+
+    class CapturingModel:
+        def with_structured_output(self, schema, **kwargs):
+            return self
+
+        def invoke(self, messages):
+            seen.append(list(messages))
+            step = CompassStep(
+                reasoning="done",
+                action=CompassAction(final_answer="ok"),
+                confidence=0.9,
+                risk_level="low",
+            )
+            return {"parsed": step, "raw": None, "parsing_error": None}
+
+    agent = build_compass_agent(CapturingModel(), [], policy="POLICY: authenticate first.")
+    agent.invoke(_init_state("hi"))
+
+    assert "authenticate first" in seen[0][0].content

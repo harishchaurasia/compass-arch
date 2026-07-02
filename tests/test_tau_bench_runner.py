@@ -314,7 +314,6 @@ def test_run_trial_tau_task_success_via_ground_truth_replay():
     task = {
         "id": "tau_retail_test",
         "instruction": f"Cancel order {order_id}, reason: no longer needed.",
-        "expected_outcome": "",
         "ground_truth_actions": [
             {"name": "cancel_pending_order",
              "kwargs": {"order_id": order_id, "reason": "no longer needed"}},
@@ -343,7 +342,6 @@ def test_run_trial_tau_task_fails_when_agent_only_claims_success():
     task = {
         "id": "tau_retail_test",
         "instruction": f"Cancel order {order_id}.",
-        "expected_outcome": "",
         "ground_truth_actions": [
             {"name": "cancel_pending_order",
              "kwargs": {"order_id": order_id, "reason": "no longer needed"}},
@@ -364,7 +362,6 @@ def test_run_trial_tau_task_checks_expected_outputs():
     task = {
         "id": "tau_retail_test",
         "instruction": "How much is the total?",
-        "expected_outcome": "",
         "ground_truth_actions": [],
         "expected_outputs": ["1053.60"],
     }
@@ -393,7 +390,6 @@ def test_run_trial_tau_task_wrong_destructive_action_is_compound_material():
     task = {
         "id": "tau_retail_test",
         "instruction": f"Cancel order {target}.",
-        "expected_outcome": "",
         "ground_truth_actions": [
             {"name": "cancel_pending_order",
              "kwargs": {"order_id": target, "reason": "no longer needed"}},

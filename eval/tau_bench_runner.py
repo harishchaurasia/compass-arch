@@ -68,7 +68,7 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
     expected_outputs in the final message — mirroring upstream τ-bench.
     """
     instruction = task["instruction"]
-    expected = task["expected_outcome"]
+    expected = task.get("expected_outcome", "")  # homemade tasks only
     is_tau = "ground_truth_actions" in task
 
     # Snapshot the whole order DB so we can detect any destructive action the

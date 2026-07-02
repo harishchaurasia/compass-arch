@@ -26,7 +26,7 @@ class CompassState(TypedDict):
     high_risk_verified: bool  # last high-risk action passed the confirm step
 
 
-def _system_prompt(tools: list[BaseTool]) -> SystemMessage:
+def _system_prompt(tools: list[BaseTool], policy: str | None = None) -> SystemMessage:
     tool_lines = []
     for t in tools:
         params = ", ".join(
@@ -35,8 +35,9 @@ def _system_prompt(tools: list[BaseTool]) -> SystemMessage:
         )
         tool_lines.append(f"  - {t.name}({params}): {t.description}")
     tool_str = "\n".join(tool_lines)
+    policy_block = f"\n\nDomain policy you must follow:\n{policy}\n" if policy else ""
     return SystemMessage(content=(
-        f"You are a calibrated retail customer service agent.\n\n"
+        f"You are a calibrated retail customer service agent.{policy_block}\n\n"
         f"Available tools (use EXACT parameter names shown):\n{tool_str}\n\n"
         "For each step fill ALL fields at the TOP LEVEL — never nest confidence or risk_level inside action:\n"
         "  reasoning        — explain your thinking\n"
@@ -55,16 +56,18 @@ def build_compass_agent(
     tools: list[BaseTool],
     max_steps: int = 20,
     tool_risk: dict[str, str] | None = None,
+    policy: str | None = None,
 ) -> StateGraph:
     """tool_risk maps tool name → static risk class ('low'|'medium'|'high').
     Effective risk is max(model's verbalized risk_level, tool class), so an
-    under-labelled destructive tool is still gated as high."""
+    under-labelled destructive tool is still gated as high. policy, when
+    given, is embedded in the system prompt (e.g. the τ-bench retail wiki)."""
     tool_risk = tool_risk or {}
     tool_map = {t.name: t for t in tools}
     structured_model = model.with_structured_output(
         CompassStep, method="function_calling", strict=False, include_raw=True
     )
-    system = _system_prompt(tools)
+    system = _system_prompt(tools, policy)
 
     def plan(state: CompassState) -> dict:
         result = structured_model.invoke([system] + list(state["messages"]))
