@@ -187,3 +187,28 @@ def test_modify_address_accepts_missing_hash():
     result = modify_pending_order_address.invoke({"order_id": "W1111112", "address": new_addr})
     assert "updated" in result.lower()
     assert db.ORDERS["#W1111112"]["address"]["street"] == "789 New Rd"
+
+# ── TOOL_RISK static classes ──────────────────────────────────────────────────
+
+def test_tool_risk_classes_cover_all_retail_tools():
+    from compass.tools.retail import (
+        TOOL_RISK,
+        cancel_pending_order,
+        find_user_id_by_email,
+        find_user_id_by_name_zip,
+        get_order_details,
+        get_user_details,
+        modify_pending_order_address,
+        return_delivered_order_items,
+    )
+    all_tools = [
+        find_user_id_by_name_zip, find_user_id_by_email, get_user_details,
+        get_order_details, cancel_pending_order, return_delivered_order_items,
+        modify_pending_order_address,
+    ]
+    assert set(TOOL_RISK) == {t.name for t in all_tools}
+    # every DB-mutating tool is classed high; lookups are low
+    assert TOOL_RISK["cancel_pending_order"] == "high"
+    assert TOOL_RISK["return_delivered_order_items"] == "high"
+    assert TOOL_RISK["modify_pending_order_address"] == "high"
+    assert TOOL_RISK["get_order_details"] == "low"

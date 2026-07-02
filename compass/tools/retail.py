@@ -13,6 +13,20 @@ def _normalize_order_id(order_id: str) -> str:
     return order_id if order_id.startswith("#") else "#" + order_id
 
 
+# Static risk classes: DB-mutating tools are high, lookups low. Passed to
+# build_compass_agent(tool_risk=...) to floor the model's verbalized risk_level,
+# which the Phase 2 pilot showed labels destructive actions 'low'/'medium'.
+TOOL_RISK = {
+    "find_user_id_by_name_zip": "low",
+    "find_user_id_by_email": "low",
+    "get_user_details": "low",
+    "get_order_details": "low",
+    "cancel_pending_order": "high",
+    "return_delivered_order_items": "high",
+    "modify_pending_order_address": "high",
+}
+
+
 @tool
 def find_user_id_by_name_zip(first_name: str, last_name: str, zip: str) -> str:
     """Find a user's ID by their first name, last name, and zip code."""

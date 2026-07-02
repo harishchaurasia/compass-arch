@@ -11,6 +11,20 @@ class PolicyDecision(Enum):
     ABSTAIN = "abstain"
 
 
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def max_risk(a: str, b: str) -> str:
+    """Higher of two risk levels. Used to floor the model's verbalized
+    risk_level with a tool's static risk class — the Phase 2 pilot showed
+    models label destructive actions 'low', so verbalized risk alone
+    cannot be trusted to gate anything."""
+    for level in (a, b):
+        if level not in _RISK_ORDER:
+            raise ValueError(f"Unknown risk_level: {level!r}")
+    return a if _RISK_ORDER[a] >= _RISK_ORDER[b] else b
+
+
 def decide(success_prob: float, risk_level: str) -> PolicyDecision:
     if risk_level == "low":
         return PolicyDecision.EXECUTE

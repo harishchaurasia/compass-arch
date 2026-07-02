@@ -11,12 +11,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
-load_dotenv()  # reads OPENAI_API_KEY from prj/.env (gitignored)
-
 import compass.tools.retail_db as db
 from compass.agent_compass import build_compass_agent
 from compass.agent_vanilla import build_vanilla_agent
 from compass.tools.retail import (
+    TOOL_RISK,
     cancel_pending_order,
     find_user_id_by_email,
     find_user_id_by_name_zip,
@@ -44,11 +43,12 @@ TOOLS = [
 
 
 def main():
+    load_dotenv()  # reads OPENAI_API_KEY from prj/.env (gitignored)
     tasks = json.loads(TASKS_FILE.read_text())
     model = ChatOpenAI(model=MODEL_NAME, temperature=0)
 
     vanilla = build_vanilla_agent(model, TOOLS)
-    compass = build_compass_agent(model, TOOLS)
+    compass = build_compass_agent(model, TOOLS, tool_risk=TOOL_RISK)
 
     print(f"\n{'─'*60}")
     print(f"Phase 1 Pilot  |  {len(tasks)} tasks × 2 conditions  |  {MODEL_NAME}")

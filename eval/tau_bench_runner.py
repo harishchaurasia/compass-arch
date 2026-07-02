@@ -37,6 +37,7 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
         "steps": 0 if condition == "vanilla" else [],
         "abstained": False,
         "self_verify_count": 0,
+        "high_risk_verified": False,
     }
 
     final_state = agent.invoke(init_state)

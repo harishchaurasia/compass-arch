@@ -188,6 +188,106 @@ def test_two_consecutive_self_verifies_escalate_to_abstain():
     assert called == []  # tool was never executed
 
 
+def test_tool_risk_class_floors_model_risk_label():
+    """A destructive tool statically classed 'high' must be gated as high even
+    when the model labels the step 'low' — verbalized risk is unreliable."""
+    called = []
+
+    @tool
+    def wipe_account(record_id: str) -> str:
+        """Wipe an account permanently."""
+        called.append(record_id)
+        return "wiped"
+
+    steps = [
+        CompassStep(
+            reasoning="Routine cleanup.",
+            action=CompassAction(tool="wipe_account", args={"record_id": "r7"}),
+            confidence=0.5,  # below T_HIGH=0.8; effective risk high → abstain
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(
+        FakeCompassModel(steps),
+        [wipe_account],
+        tool_risk={"wipe_account": "high"},
+    )
+    state = agent.invoke(_init_state("Clean up account r7"))
+
+    assert state["abstained"] is True
+    assert called == []
+
+
+def test_high_risk_high_confidence_requires_confirmation_before_execute():
+    """DESIGN.md Table 1: High risk + conf ≥ T_high → execute WITH an explicit
+    verification step. The tool runs only after the model re-affirms the action."""
+    called = []
+
+    @tool
+    def cancel_subscription(sub_id: str) -> str:
+        """Cancel a subscription (irreversible)."""
+        called.append(sub_id)
+        return "cancelled"
+
+    plan_step = CompassStep(
+        reasoning="User asked to cancel.",
+        action=CompassAction(tool="cancel_subscription", args={"sub_id": "s1"}),
+        confidence=0.9,  # above T_HIGH → execute path, but must confirm first
+        risk_level="high",
+    )
+    steps = [
+        plan_step,
+        plan_step.model_copy(),  # re-affirms the same action after the confirm prompt
+        CompassStep(
+            reasoning="Done.",
+            action=CompassAction(final_answer="Subscription cancelled."),
+            confidence=0.95,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(FakeCompassModel(steps), [cancel_subscription])
+    state = agent.invoke(_init_state("Cancel subscription s1"))
+
+    assert called == ["s1"]  # executed exactly once, after re-affirmation
+    all_content = " ".join(
+        m.content for m in state["messages"] if hasattr(m, "content")
+    ).lower()
+    assert "high-risk" in all_content  # the confirmation prompt was injected
+
+
+def test_confirmation_lets_model_back_out_of_wrong_action():
+    """If re-reading the request makes the model realize the action is wrong,
+    it can revise to a final answer and the tool is never called."""
+    called = []
+
+    @tool
+    def cancel_subscription(sub_id: str) -> str:
+        """Cancel a subscription (irreversible)."""
+        called.append(sub_id)
+        return "cancelled"
+
+    steps = [
+        CompassStep(
+            reasoning="I'll cancel the subscription.",
+            action=CompassAction(tool="cancel_subscription", args={"sub_id": "s1"}),
+            confidence=0.9,
+            risk_level="high",
+        ),
+        # after the confirm prompt: the user actually asked for a refund, not a cancel
+        CompassStep(
+            reasoning="Re-read the request — they asked about a refund, not cancellation.",
+            action=CompassAction(final_answer="I can't do that; you asked about a refund."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(FakeCompassModel(steps), [cancel_subscription])
+    state = agent.invoke(_init_state("Refund subscription s1"))
+
+    assert called == []
+    assert "refund" in state["messages"][-1].content
+
+
 def test_execute_resets_self_verify_count():
     """A successful EXECUTE resets the counter so a later SELF_VERIFY gets a fresh start."""
     steps = [

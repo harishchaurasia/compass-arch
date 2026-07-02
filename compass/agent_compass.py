@@ -7,7 +7,7 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
 
 from compass.calibration import calibrate
-from compass.policy import PolicyDecision, decide
+from compass.policy import PolicyDecision, decide, max_risk
 from compass.schemas import CompassAction, CompassStep  # noqa: F401 — re-exported for callers
 from compass.trajectory import extract_features
 
@@ -23,6 +23,7 @@ class CompassState(TypedDict):
     steps: Annotated[list[CompassStep], _append]
     abstained: bool
     self_verify_count: int
+    high_risk_verified: bool  # last high-risk action passed the confirm step
 
 
 def _system_prompt(tools: list[BaseTool]) -> SystemMessage:
@@ -53,7 +54,12 @@ def build_compass_agent(
     model: BaseChatModel,
     tools: list[BaseTool],
     max_steps: int = 20,
+    tool_risk: dict[str, str] | None = None,
 ) -> StateGraph:
+    """tool_risk maps tool name → static risk class ('low'|'medium'|'high').
+    Effective risk is max(model's verbalized risk_level, tool class), so an
+    under-labelled destructive tool is still gated as high."""
+    tool_risk = tool_risk or {}
     tool_map = {t.name: t for t in tools}
     structured_model = model.with_structured_output(
         CompassStep, method="function_calling", strict=False, include_raw=True
@@ -71,6 +77,9 @@ def build_compass_agent(
         step: CompassStep = result["parsed"]
         return {"steps": [step]}
 
+    def _effective_risk(step: CompassStep) -> str:
+        return max_risk(step.risk_level, tool_risk.get(step.action.tool, "low"))
+
     def route(state: CompassState) -> str:
         if len(state["steps"]) >= max_steps:
             return "abstain"
@@ -79,10 +88,19 @@ def build_compass_agent(
             return "finish"
         features = extract_features(state["steps"])
         success_prob = calibrate(step.confidence, features)
-        decision = decide(success_prob, step.risk_level)
+        risk = _effective_risk(step)
+        decision = decide(success_prob, risk)
         # Escalate to abstain if SELF_VERIFY keeps firing without any execution
         if decision == PolicyDecision.SELF_VERIFY and state["self_verify_count"] >= MAX_SELF_VERIFY:
             return "abstain"
+        # High-risk executes need an explicit verification pass first
+        # (DESIGN.md Table 1): the model must re-confirm intent before acting.
+        if (
+            decision == PolicyDecision.EXECUTE
+            and risk == "high"
+            and not state.get("high_risk_verified", False)
+        ):
+            return "confirm"
         return decision.value  # "execute" | "self_verify" | "abstain"
 
     def execute(state: CompassState) -> dict:
@@ -93,7 +111,19 @@ def build_compass_agent(
         return {
             "messages": [HumanMessage(content=f"Tool '{tool_name}' returned: {result}")],
             "self_verify_count": 0,  # real progress — reset the streak
+            "high_risk_verified": False,  # each high-risk action needs its own confirm
         }
+
+    def confirm(state: CompassState) -> dict:
+        step = state["steps"][-1]
+        msg = HumanMessage(content=(
+            f"You are about to take a HIGH-risk action: "
+            f"{step.action.tool}({step.action.args}). "
+            "Re-read the user's original request and confirm this action is "
+            "exactly what they asked for. If it is, repeat the same action; "
+            "if not, change course."
+        ))
+        return {"messages": [msg], "high_risk_verified": True}
 
     def self_verify(state: CompassState) -> dict:
         step = state["steps"][-1]
@@ -105,9 +135,10 @@ def build_compass_agent(
 
     def abstain(state: CompassState) -> dict:
         step = state["steps"][-1]
+        risk = _effective_risk(step) if step.action.tool else step.risk_level
         msg = AIMessage(content=(
             f"ABSTAINING: confidence {step.confidence:.2f} is below threshold for "
-            f"{step.risk_level}-risk action. Reasoning: {step.reasoning}"
+            f"{risk}-risk action. Reasoning: {step.reasoning}"
         ))
         return {"messages": [msg], "abstained": True}
 
@@ -118,6 +149,7 @@ def build_compass_agent(
     graph = StateGraph(CompassState)
     graph.add_node("plan", plan)
     graph.add_node("execute", execute)
+    graph.add_node("confirm", confirm)
     graph.add_node("self_verify", self_verify)
     graph.add_node("abstain", abstain)
     graph.add_node("finish", finish)
@@ -125,11 +157,13 @@ def build_compass_agent(
     graph.set_entry_point("plan")
     graph.add_conditional_edges("plan", route, {
         "execute": "execute",
+        "confirm": "confirm",
         "self_verify": "self_verify",
         "abstain": "abstain",
         "finish": "finish",
     })
     graph.add_edge("execute", "plan")
+    graph.add_edge("confirm", "plan")
     graph.add_edge("self_verify", "plan")
     graph.add_edge("abstain", END)
     graph.add_edge("finish", END)
