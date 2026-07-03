@@ -433,3 +433,52 @@ def test_run_trial_invariant_check_fails_when_order_mutated():
     result = run_trial(task, agent, condition="vanilla", model="fake")
 
     assert result.success is False
+
+
+def test_run_trial_compass_stores_step_trace():
+    """Post-hoc failure analysis needs per-step tool/args/confidence/risk,
+    plus the message transcript — the DB is the only artifact of a trial."""
+    from compass.agent_compass import CompassAction, CompassStep, build_compass_agent
+
+    class FakeCompassModel:
+        def __init__(self, steps):
+            self._iter = iter(steps)
+
+        def with_structured_output(self, schema, **kwargs):
+            return self
+
+        def invoke(self, messages):
+            return {"parsed": next(self._iter), "raw": None, "parsing_error": None}
+
+    @tool
+    def read_order(order_id: str) -> str:
+        """Read an order (read-only)."""
+        return "pending"
+
+    steps = [
+        CompassStep(
+            reasoning="Check the order.",
+            action=CompassAction(tool="read_order", args={"order_id": "#W1111111"}),
+            confidence=0.8,
+            risk_level="low",
+        ),
+        CompassStep(
+            reasoning="Done.",
+            action=CompassAction(final_answer="It is pending."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    task = {
+        "id": "retail_004",
+        "instruction": "Status of #W1111111?",
+        "expected_outcome": "pending",
+    }
+    agent = build_compass_agent(FakeCompassModel(steps), [read_order])
+    result = run_trial(task, agent, condition="compass", model="fake")
+
+    assert result.trace["steps"][0]["tool"] == "read_order"
+    assert result.trace["steps"][0]["args"] == {"order_id": "#W1111111"}
+    assert result.trace["steps"][1]["final_answer"] == "It is pending."
+    roles = [m["role"] for m in result.trace["messages"]]
+    assert roles[0] == "human"

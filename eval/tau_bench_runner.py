@@ -9,6 +9,28 @@ from compass.trajectory import extract_features
 from eval.trial_store import TrialResult
 
 
+def _serialize_trace(final_state: dict, condition: str) -> dict:
+    """DESIGN.md's roll-your-own JSON trace: per-step decisions (Compass) and
+    the message transcript. The DB row is the only artifact of a trial, so
+    everything post-hoc analysis might need goes here."""
+    messages = [
+        {"role": getattr(m, "type", "unknown"), "content": str(getattr(m, "content", m))}
+        for m in final_state.get("messages", [])
+    ]
+    steps = []
+    if condition == "compass":
+        for s in final_state.get("steps", []):
+            steps.append({
+                "reasoning": s.reasoning,
+                "tool": s.action.tool,
+                "args": s.action.args,
+                "final_answer": s.action.final_answer,
+                "confidence": s.confidence,
+                "risk_level": s.risk_level,
+            })
+    return {"steps": steps, "messages": messages}
+
+
 def _replay_success_probs(steps: list) -> list[float]:
     """Recompute the calibrated success_prob the route edge saw at each step.
 
@@ -151,4 +173,5 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
         success_probs=success_probs,
         mutated_order_ids=mutated_order_ids,
         risk_levels=risk_levels,
+        trace=_serialize_trace(final_state, condition),
     )

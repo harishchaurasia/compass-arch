@@ -18,6 +18,7 @@ class TrialResult:
     success_probs: list[float] = field(default_factory=list)    # calibrated, Compass only
     mutated_order_ids: list[str] = field(default_factory=list)  # orders changed during trial
     risk_levels: list[str] = field(default_factory=list)        # per-step, Compass only
+    trace: dict = field(default_factory=dict)                   # {"steps": [...], "messages": [...]}
 
 
 _CREATE = """
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS trials (
     success_probs     TEXT NOT NULL DEFAULT '[]',
     mutated_order_ids TEXT NOT NULL DEFAULT '[]',
     risk_levels       TEXT NOT NULL DEFAULT '[]',
+    trace             TEXT NOT NULL DEFAULT '{}',
     created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -43,19 +45,20 @@ _MIGRATIONS = [
     "ALTER TABLE trials ADD COLUMN success_probs TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE trials ADD COLUMN mutated_order_ids TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE trials ADD COLUMN risk_levels TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE trials ADD COLUMN trace TEXT NOT NULL DEFAULT '{}'",
 ]
 
 _INSERT = """
 INSERT INTO trials (task_id, condition, model, success, steps, abstained,
                     confidence_scores, final_message, success_probs, mutated_order_ids,
-                    risk_levels)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    risk_levels, trace)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 _SELECT = (
     "SELECT task_id, condition, model, success, steps, abstained,"
     " confidence_scores, final_message, success_probs, mutated_order_ids,"
-    " risk_levels FROM trials"
+    " risk_levels, trace FROM trials"
 )
 
 
@@ -84,6 +87,7 @@ def save_trial(result: TrialResult, db_path: Path) -> None:
             json.dumps(result.success_probs),
             json.dumps(result.mutated_order_ids),
             json.dumps(result.risk_levels),
+            json.dumps(result.trace),
         ))
 
 
@@ -106,6 +110,7 @@ def load_trials(db_path: Path) -> list[TrialResult]:
             success_probs=json.loads(r[8]),
             mutated_order_ids=json.loads(r[9]),
             risk_levels=json.loads(r[10]),
+            trace=json.loads(r[11]),
         )
         for r in rows
     ]

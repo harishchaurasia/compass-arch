@@ -154,3 +154,27 @@ def test_abstained_trial_stored_correctly(db):
     r = load_trials(db)[0]
     assert r.abstained is True
     assert r.confidence_scores == [0.4]
+
+
+def test_trace_round_trip(db):
+    trial = TrialResult(
+        task_id="retail_007",
+        condition="compass",
+        model="claude-sonnet-4-6",
+        success=False,
+        steps=2,
+        abstained=False,
+        confidence_scores=[0.9],
+        final_message="Done.",
+        trace={"steps": [{"tool": "cancel_pending_order", "confidence": 0.9}],
+               "messages": [{"role": "human", "content": "hi"}]},
+    )
+    save_trial(trial, db)
+    r = load_trials(db)[0]
+    assert r.trace["steps"][0]["tool"] == "cancel_pending_order"
+    assert r.trace["messages"][0]["role"] == "human"
+
+
+def test_trace_defaults_to_empty_dict(db):
+    save_trial(_sample(), db)
+    assert load_trials(db)[0].trace == {}
