@@ -17,8 +17,20 @@ manual steps below explain what it does and how to intervene.
 
 ## 1. One-time setup
 
+**Windows note:** install `uv` from PowerShell first (it isn't preinstalled
+anywhere):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+then **close and reopen the terminal** so `uv` lands on PATH. Run the `.sh`
+script from **Git Bash** (installed with Git for Windows — right-click →
+"Open Git Bash here"), not from PowerShell/cmd. Ollama itself installs
+natively on Windows.
+
 ```bash
-git clone <this repo> && cd prj
+git clone https://github.com/harishchaurasia/compass-arch.git && cd compass-arch
 uv sync                        # installs everything incl. langchain-ollama
 
 # install Ollama (https://ollama.com/download), then:
@@ -63,7 +75,7 @@ Find what's missing and resume only those cells (same pattern as the
 gpt-4o-mini resume):
 
 ```bash
-sqlite3 results/trials.db "SELECT condition, COUNT(DISTINCT task_id) FROM trials WHERE model='qwen2.5:7b' GROUP BY condition;"
+uv run python scripts/export_trials.py --model qwen2.5:7b   # prints per-condition counts
 # then e.g.:
 uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:7b \
   --task-ids tau_retail_090 tau_retail_091 --conditions compass 2>&1 | tee -a results/run.log
@@ -72,12 +84,14 @@ uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:7b \
 ## 5. Getting results back
 
 `results/trials.db` is gitignored (by design — raw trial data never gets
-committed). After the run, verify completeness:
+committed). The driver script already verifies counts and writes
+`results/export_<model>.json` after each run; to redo it manually:
 
 ```bash
-sqlite3 results/trials.db "SELECT model, condition, COUNT(*), COUNT(DISTINCT task_id) FROM trials GROUP BY model, condition;"
+uv run python scripts/export_trials.py --model qwen2.5:7b
 ```
 
-Expect 115/115 per condition per model. Then copy the `.db` file back to the
-Mac (AirDrop / scp / drive) — Claude merges the new-model rows into the main
-`results/trials.db` there and refreshes the analysis + charts.
+Expect 115 distinct tasks per condition per model. Then send the export
+JSONs (or the whole `.db` file) back to the Mac — Claude merges the
+new-model rows into the main `results/trials.db` there and refreshes the
+analysis + charts.

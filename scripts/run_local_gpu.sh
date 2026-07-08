@@ -41,24 +41,8 @@ ensure_model() {
 verify_and_export() {
     local model="$1"
     say "verifying completeness for $model ..."
-    sqlite3 results/trials.db \
-        "SELECT condition || ': ' || COUNT(*) || ' rows, ' || COUNT(DISTINCT task_id) || ' distinct tasks'
-         FROM trials WHERE model='$model' AND task_id LIKE 'tau_retail%' GROUP BY condition;" \
-        | tee -a "$LOG"
-    local export="results/export_$(echo "$model" | tr ':/.' '___').json"
-    sqlite3 results/trials.db \
-        "SELECT json_group_array(json_object(
-            'task_id', task_id, 'condition', condition, 'model', model,
-            'success', success, 'steps', steps, 'abstained', abstained,
-            'confidence_scores', json(confidence_scores),
-            'success_probs', json(success_probs),
-            'mutated_order_ids', json(mutated_order_ids),
-            'risk_levels', json(risk_levels),
-            'final_message', final_message, 'trace', json(trace),
-            'created_at', created_at))
-         FROM trials WHERE model='$model' AND task_id LIKE 'tau_retail%';" \
-        > "$export"
-    say "exported → $export ($(du -h "$export" | cut -f1)) — send this (or trials.db) back for analysis"
+    uv run python scripts/export_trials.py --model "$model" 2>&1 | tee -a "$LOG"
+    say "send the exported file (or results/trials.db) back for analysis"
 }
 
 run_suite() {
