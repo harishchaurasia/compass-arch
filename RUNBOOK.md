@@ -4,6 +4,17 @@ Step-by-step for running the τ-bench suite against local models via Ollama.
 The gpt-4o-mini data already lives in the main `results/trials.db`; these runs
 add `qwen2.5:7b` and (optionally) `llama3.1:8b` rows on your PC.
 
+**TL;DR — one command does everything below:**
+
+```bash
+./scripts/run_local_gpu.sh all     # smoke → full qwen → full llama, logs + exports
+```
+
+(`smoke`, `qwen`, or `llama` run the individual stages.) It appends to
+`results/run_local.log`, verifies completeness after each run, and dumps each
+model's rows to `results/export_<model>.json` to send back for analysis. The
+manual steps below explain what it does and how to intervene.
+
 ## 1. One-time setup
 
 ```bash
