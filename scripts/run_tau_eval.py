@@ -4,6 +4,7 @@ Usage:
     uv run python scripts/run_tau_eval.py                # all 115 tasks × 2 conditions
     uv run python scripts/run_tau_eval.py --limit 3      # smoke: first 3 tasks
     uv run python scripts/run_tau_eval.py --model gpt-4o-mini
+    uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:7b
 
 Writes one row per trial to results/trials.db (task ids are tau_retail_*,
 distinguishing them from the homemade retail_* suite).
@@ -13,11 +14,11 @@ import json
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 
 import compass.tools.tau_retail.db as tau_db
 from compass.agent_compass import build_compass_agent
 from compass.agent_vanilla import build_vanilla_agent
+from compass.models import get_model
 from compass.tools.tau_retail import ALL_TOOLS, TOOL_RISK
 from eval.metrics import compound_failure_rate, selective_success_rate
 from eval.tau_bench_runner import run_trial
@@ -44,6 +45,11 @@ _SINGLE_SHOT_TEMPLATE = (
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="gpt-4o-mini")
+    parser.add_argument(
+        "--provider", default="openai",
+        choices=["openai", "ollama", "anthropic", "google_genai"],
+        help="model provider (ollama for local GPU runs, e.g. qwen2.5:7b)",
+    )
     parser.add_argument("--limit", type=int, default=None, help="run first N tasks only")
     parser.add_argument("--task-ids", nargs="*", default=None, help="run only these task ids")
     parser.add_argument(
@@ -60,7 +66,7 @@ def main() -> None:
         tasks = tasks[: args.limit]
     policy = WIKI_FILE.read_text()
 
-    model = ChatOpenAI(model=args.model, temperature=0)
+    model = get_model(args.provider, args.model, temperature=0)
     vanilla = build_vanilla_agent(model, ALL_TOOLS, policy=policy)
     compass = build_compass_agent(model, ALL_TOOLS, tool_risk=TOOL_RISK, policy=policy)
 
