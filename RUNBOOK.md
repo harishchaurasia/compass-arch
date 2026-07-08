@@ -17,17 +17,17 @@ manual steps below explain what it does and how to intervene.
 
 ## 1. One-time setup
 
-**Windows note:** install `uv` from PowerShell first (it isn't preinstalled
-anywhere):
+**Windows:** one script does all of this section — open **Git Bash** in the
+repo folder (right-click → "Open Git Bash here") and run:
 
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```bash
+./scripts/windows_setup.sh
 ```
 
-then **close and reopen the terminal** so `uv` lands on PATH. Run the `.sh`
-script from **Git Bash** (installed with Git for Windows — right-click →
-"Open Git Bash here"), not from PowerShell/cmd. Ollama itself installs
-natively on Windows.
+It installs uv and Ollama if missing, creates the venv, pulls both models,
+and finishes with the smoke test. Everything below is the manual/macOS/Linux
+equivalent. (All later commands on Windows also go in Git Bash, not
+PowerShell/cmd.)
 
 ```bash
 git clone https://github.com/harishchaurasia/compass-arch.git && cd compass-arch
