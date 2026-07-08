@@ -1,0 +1,101 @@
+{
+  "description": "40-task frontier subsample, stratified over gpt-4o-mini pilot outcome categories, seed=42",
+  "strata": {
+    "both_fail_v_mutates": [
+      "tau_retail_002",
+      "tau_retail_003",
+      "tau_retail_026",
+      "tau_retail_030",
+      "tau_retail_033",
+      "tau_retail_034",
+      "tau_retail_052",
+      "tau_retail_053",
+      "tau_retail_055",
+      "tau_retail_074",
+      "tau_retail_097",
+      "tau_retail_099",
+      "tau_retail_108",
+      "tau_retail_111"
+    ],
+    "both_fail_both_mutate": [
+      "tau_retail_005",
+      "tau_retail_022",
+      "tau_retail_076",
+      "tau_retail_079",
+      "tau_retail_100",
+      "tau_retail_104"
+    ],
+    "vanilla_only_abstained": [
+      "tau_retail_044",
+      "tau_retail_049",
+      "tau_retail_068",
+      "tau_retail_087",
+      "tau_retail_093",
+      "tau_retail_114"
+    ],
+    "vanilla_only_committed": [
+      "tau_retail_014",
+      "tau_retail_031",
+      "tau_retail_061",
+      "tau_retail_092"
+    ],
+    "compass_only": [
+      "tau_retail_006",
+      "tau_retail_018",
+      "tau_retail_024",
+      "tau_retail_106"
+    ],
+    "both_succeed": [
+      "tau_retail_010",
+      "tau_retail_050",
+      "tau_retail_067"
+    ],
+    "both_fail_clean": [
+      "tau_retail_008",
+      "tau_retail_023",
+      "tau_retail_027"
+    ]
+  },
+  "task_ids": [
+    "tau_retail_002",
+    "tau_retail_003",
+    "tau_retail_005",
+    "tau_retail_006",
+    "tau_retail_008",
+    "tau_retail_010",
+    "tau_retail_014",
+    "tau_retail_018",
+    "tau_retail_022",
+    "tau_retail_023",
+    "tau_retail_024",
+    "tau_retail_026",
+    "tau_retail_027",
+    "tau_retail_030",
+    "tau_retail_031",
+    "tau_retail_033",
+    "tau_retail_034",
+    "tau_retail_044",
+    "tau_retail_049",
+    "tau_retail_050",
+    "tau_retail_052",
+    "tau_retail_053",
+    "tau_retail_055",
+    "tau_retail_061",
+    "tau_retail_067",
+    "tau_retail_068",
+    "tau_retail_074",
+    "tau_retail_076",
+    "tau_retail_079",
+    "tau_retail_087",
+    "tau_retail_092",
+    "tau_retail_093",
+    "tau_retail_097",
+    "tau_retail_099",
+    "tau_retail_100",
+    "tau_retail_104",
+    "tau_retail_106",
+    "tau_retail_108",
+    "tau_retail_111",
+    "tau_retail_114"
+  ]
+}
