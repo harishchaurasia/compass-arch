@@ -37,13 +37,13 @@ QUOTA = {
 }
 
 
-def load_tasks() -> dict:
+def load_tasks(model: str = MODEL) -> dict:
     db = sqlite3.connect(DB_PATH)
     rows = db.execute(
         """SELECT task_id, condition, success, abstained, mutated_order_ids,
                   success_probs, risk_levels, trace
            FROM trials WHERE task_id LIKE 'tau_retail%' AND model = ?""",
-        (MODEL,),
+        (model,),
     ).fetchall()
     tasks: dict = defaultdict(dict)
     for tid, cond, succ, abst, mut, probs, risks, trace in rows:
@@ -125,7 +125,17 @@ def t_high_sensitivity(tasks: dict) -> None:
     print(f"  replay@0.8 vs observed abstain flag: {agree}/{len(tasks)} agree")
 
     print(f"{'T_HIGH':>7} {'abstain%':>9} {'pre-mutation abstain% (traced only)':>36}")
-    for t_high in (0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95):
+    for p in t_high_sensitivity_points(tasks):
+        print(f"{p['t_high']:>7} {p['abstain_rate']:>8.1%} {p['pre_mutation_rate']:>35.1%}")
+
+
+def t_high_sensitivity_points(
+    tasks: dict,
+    thresholds: tuple[float, ...] = (0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95),
+) -> list[dict]:
+    """Data behind the sensitivity table/chart. See t_high_sensitivity caveats."""
+    points = []
+    for t_high in thresholds:
         abstain = pre_mut = n_mut = 0
         for d in tasks.values():
             c = d["compass"]
@@ -144,10 +154,12 @@ def t_high_sensitivity(tasks: dict) -> None:
                     n_mut += 1
                     if first_abstain is not None and first_abstain <= first_mut:
                         pre_mut += 1
-        print(
-            f"{t_high:>7} {abstain / len(tasks):>8.1%} "
-            f"{pre_mut / n_mut if n_mut else 0:>35.1%}"
-        )
+        points.append({
+            "t_high": t_high,
+            "abstain_rate": abstain / len(tasks),
+            "pre_mutation_rate": pre_mut / n_mut if n_mut else 0.0,
+        })
+    return points
 
 
 def main() -> None:
