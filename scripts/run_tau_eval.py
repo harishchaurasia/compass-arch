@@ -45,10 +45,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="gpt-4o-mini")
     parser.add_argument("--limit", type=int, default=None, help="run first N tasks only")
+    parser.add_argument("--task-ids", nargs="*", default=None, help="run only these task ids")
+    parser.add_argument(
+        "--conditions", nargs="*", default=["vanilla", "compass"],
+        choices=["vanilla", "compass"],
+    )
     args = parser.parse_args()
 
     load_dotenv()
     tasks = json.loads(TASKS_FILE.read_text())
+    if args.task_ids:
+        tasks = [t for t in tasks if t["id"] in set(args.task_ids)]
     if args.limit:
         tasks = tasks[: args.limit]
     policy = WIKI_FILE.read_text()
@@ -66,7 +73,8 @@ def main() -> None:
             **task,
             "instruction": _SINGLE_SHOT_TEMPLATE.format(instruction=task["instruction"]),
         }
-        for condition, agent in [("vanilla", vanilla), ("compass", compass)]:
+        agents = [("vanilla", vanilla), ("compass", compass)]
+        for condition, agent in [(c, a) for c, a in agents if c in args.conditions]:
             print(f"  {task['id']} / {condition} ... ", end="", flush=True)
             try:
                 tau_db.reset()
