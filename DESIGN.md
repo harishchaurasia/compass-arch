@@ -88,6 +88,10 @@ This is where calibration becomes _behavior_. The trajectory success probability
 
 T_med and T_high are tuned on the dev split. Risk in this table is the _effective_ risk (see Component 1 amendment). The "execute with explicit verification" row is implemented as a `confirm` graph node: the model is told what high-risk action it is about to take, must re-read the user's request, and either re-affirms the action (which then executes) or changes course.
 
+**Amendment (Phase 2 full pilot, 2026-07-07):** the confirm gate originally tracked a boolean "verified" flag, which the 115-task pilot showed is a hole: after a confirm prompt the model can *change course to a different high-risk action*, which then executed without its own confirm (observed in tau_retail_104 — confirm was issued for `modify_pending_order_address`, model switched to `transfer_to_human_agents`, which ran unconfirmed). The gate now stores a fingerprint of the exact confirmed action (tool + args); any deviation — different tool _or_ different args — triggers a fresh confirm. Regression tests: `test_changed_course_high_risk_action_needs_its_own_confirmation`, `test_same_action_different_args_needs_new_confirmation`.
+
+**Pilot finding — abstention is per-step, not per-trial:** trials can end both abstained _and_ compound-failed (e.g. tau_retail_098, 104): a confident wrong high-risk action passes the gate and mutates early, and abstention only fires steps later when trajectory features sour. Abstention caps further damage mid-cascade (in 098 it blocked a second wrong mutation) but cannot undo a committed one. The binary compound-failure metric hides this "damage capping" — worth a secondary metric (mutations per failed trial) in analysis.
+
 The two thresholds matter because abstention is _expensive_ in terms of task success rate but _cheap_ in terms of compound failures. A well-tuned Compass abstains often enough to catch its mistakes but not so often that it becomes useless.
 
 ---

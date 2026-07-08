@@ -288,6 +288,101 @@ def test_confirmation_lets_model_back_out_of_wrong_action():
     assert "refund" in state["messages"][-1].content
 
 
+def test_changed_course_high_risk_action_needs_its_own_confirmation():
+    """Pilot finding (tau_retail_104): after a confirm prompt the model may
+    change course to a DIFFERENT high-risk action. That new action must get
+    its own confirm — the earlier confirmation must not unlock it."""
+    called = []
+
+    @tool
+    def cancel_subscription(sub_id: str) -> str:
+        """Cancel a subscription (irreversible)."""
+        called.append(("cancel", sub_id))
+        return "cancelled"
+
+    @tool
+    def delete_account(account_id: str) -> str:
+        """Delete an account permanently."""
+        called.append(("delete", account_id))
+        return "deleted"
+
+    steps = [
+        CompassStep(
+            reasoning="I'll cancel the subscription.",
+            action=CompassAction(tool="cancel_subscription", args={"sub_id": "s1"}),
+            confidence=0.9,
+            risk_level="high",
+        ),
+        # after the confirm prompt: changes course to a different high-risk action
+        CompassStep(
+            reasoning="Actually the whole account should go.",
+            action=CompassAction(tool="delete_account", args={"account_id": "a1"}),
+            confidence=0.9,
+            risk_level="high",
+        ),
+        # at delete_account's OWN confirm prompt, the model backs out entirely.
+        # If the earlier confirm wrongly unlocked delete_account, it has
+        # already executed and this step is never reached in time.
+        CompassStep(
+            reasoning="Re-read the request — no destructive action was asked for.",
+            action=CompassAction(final_answer="No changes made."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(
+        FakeCompassModel(steps), [cancel_subscription, delete_account]
+    )
+    state = agent.invoke(_init_state("Delete my account a1"))
+
+    # nothing may execute: neither action ever received a re-affirmation
+    assert called == []
+    confirm_prompts = [
+        m.content for m in state["messages"]
+        if hasattr(m, "content") and "HIGH-risk action" in str(m.content)
+    ]
+    assert len(confirm_prompts) == 2  # one per distinct high-risk action
+    assert "delete_account" in confirm_prompts[1]
+
+
+def test_same_action_different_args_needs_new_confirmation():
+    """A confirm for cancel(s1) must not unlock cancel(s2)."""
+    called = []
+
+    @tool
+    def cancel_subscription(sub_id: str) -> str:
+        """Cancel a subscription (irreversible)."""
+        called.append(sub_id)
+        return "cancelled"
+
+    steps = [
+        CompassStep(
+            reasoning="Cancel s1.",
+            action=CompassAction(tool="cancel_subscription", args={"sub_id": "s1"}),
+            confidence=0.9,
+            risk_level="high",
+        ),
+        # after confirm: same tool, different target — must be re-confirmed
+        CompassStep(
+            reasoning="It was s2, not s1.",
+            action=CompassAction(tool="cancel_subscription", args={"sub_id": "s2"}),
+            confidence=0.9,
+            risk_level="high",
+        ),
+        # backs out at s2's own confirm prompt — nothing should have run
+        CompassStep(
+            reasoning="On reflection, no cancellation was requested.",
+            action=CompassAction(final_answer="No changes made."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(FakeCompassModel(steps), [cancel_subscription])
+    agent.invoke(_init_state("Cancel subscription s2"))
+
+    assert called == []
+
+
 def test_execute_resets_self_verify_count():
     """A successful EXECUTE resets the counter so a later SELF_VERIFY gets a fresh start."""
     steps = [

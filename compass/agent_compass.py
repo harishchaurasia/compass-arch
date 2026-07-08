@@ -1,4 +1,5 @@
 """Compass calibrated agent: structured output + trajectory features + action policy."""
+import json
 from typing import Annotated, TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -23,7 +24,14 @@ class CompassState(TypedDict):
     steps: Annotated[list[CompassStep], _append]
     abstained: bool
     self_verify_count: int
-    high_risk_verified: bool  # last high-risk action passed the confirm step
+    verified_action: str  # fingerprint of the action the confirm step covered ("" = none)
+
+
+def _action_fingerprint(step: CompassStep) -> str:
+    """Identity of a proposed tool call. A confirm only unlocks THIS exact
+    action — a changed-course action (different tool OR different args, e.g.
+    a different order id) must earn its own confirm."""
+    return json.dumps({"tool": step.action.tool, "args": step.action.args}, sort_keys=True)
 
 
 def _system_prompt(tools: list[BaseTool], policy: str | None = None) -> SystemMessage:
@@ -101,7 +109,7 @@ def build_compass_agent(
         if (
             decision == PolicyDecision.EXECUTE
             and risk == "high"
-            and not state.get("high_risk_verified", False)
+            and state.get("verified_action", "") != _action_fingerprint(step)
         ):
             return "confirm"
         return decision.value  # "execute" | "self_verify" | "abstain"
@@ -114,7 +122,7 @@ def build_compass_agent(
         return {
             "messages": [HumanMessage(content=f"Tool '{tool_name}' returned: {result}")],
             "self_verify_count": 0,  # real progress — reset the streak
-            "high_risk_verified": False,  # each high-risk action needs its own confirm
+            "verified_action": "",  # each high-risk action needs its own confirm
         }
 
     def confirm(state: CompassState) -> dict:
@@ -126,7 +134,7 @@ def build_compass_agent(
             "exactly what they asked for. If it is, repeat the same action; "
             "if not, change course."
         ))
-        return {"messages": [msg], "high_risk_verified": True}
+        return {"messages": [msg], "verified_action": _action_fingerprint(step)}
 
     def self_verify(state: CompassState) -> dict:
         step = state["steps"][-1]
@@ -139,9 +147,11 @@ def build_compass_agent(
     def abstain(state: CompassState) -> dict:
         step = state["steps"][-1]
         risk = _effective_risk(step) if step.action.tool else step.risk_level
+        success_prob = calibrate(step.confidence, extract_features(state["steps"]))
         msg = AIMessage(content=(
-            f"ABSTAINING: confidence {step.confidence:.2f} is below threshold for "
-            f"{risk}-risk action. Reasoning: {step.reasoning}"
+            f"ABSTAINING: calibrated success probability {success_prob:.2f} "
+            f"(verbalized confidence {step.confidence:.2f}) is below threshold "
+            f"for {risk}-risk action. Reasoning: {step.reasoning}"
         ))
         return {"messages": [msg], "abstained": True}
 
