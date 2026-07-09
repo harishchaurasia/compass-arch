@@ -7,10 +7,12 @@ add `qwen2.5:7b` and (optionally) `llama3.1:8b` rows on your PC.
 **TL;DR — one command does everything below:**
 
 ```bash
-./scripts/run_local_gpu.sh all     # smoke → full qwen → full llama, logs + exports
+./scripts/run_local_gpu.sh all     # smoke → qwen2.5:7b → qwen2.5:14b → llama3.1:8b
 ```
 
-(`smoke`, `qwen`, or `llama` run the individual stages.) It appends to
+(`smoke [model]`, `qwen`, `qwen14`, or `llama` run the individual stages;
+`smoke` defaults to qwen2.5:7b but takes an optional model, e.g.
+`smoke qwen2.5:14b`.) It appends to
 `results/run_local.log`, verifies completeness after each run, and dumps each
 model's rows to `results/export_<model>.json` to send back for analysis. The
 manual steps below explain what it does and how to intervene.
@@ -48,26 +50,41 @@ uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:7b --lim
 ```
 
 **Healthy output** looks like the gpt-4o-mini runs: one line per trial,
-`✓`/`✗`, `steps=N`, compass lines carry `conf=[...]`. **Unhealthy:** repeated
-`ERROR: ...` on every compass trial usually means the model can't drive
-structured function-calling — stop and ping Claude; the fallback is
-llama3.1:8b (DESIGN.md names it) rather than debugging a 7B's tool syntax.
+`✓`/`✗`, `steps=N`, compass lines carry `conf=[...]`. Ollama models are driven
+via `json_schema` structured output with a content-salvage fallback, and tool
+errors (bad args, unknown/None tool) are fed back to the model instead of
+aborting — so `ERROR:` lines should now be **rare**. If you still see repeated
+`ERROR:` on every compass trial, the structured-output plumbing has regressed —
+ping Claude.
 
-A few `ERROR:` lines on isolated tasks are normal-ish (the resume flags exist
-exactly for re-running those — see step 4).
+Expect lots of `✗` and `[ABSTAINED]`: small local models are weak and badly
+**overconfident** (verbalized confidence sits near 1.0), so low task success is
+the model ceiling, not a harness bug — it's exactly the miscalibration Compass
+measures. A few `ERROR:` lines on isolated tasks are still normal-ish (the
+resume flags exist for re-running those — see step 4).
 
 ## 3. Full run (overnight)
 
+Prefer the driver, which pulls the model, runs the suite, and exports results:
+
 ```bash
-uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:7b 2>&1 | tee -a results/run.log
+./scripts/run_local_gpu.sh qwen14    # qwen2.5:14b — best-calibrated local model
 ```
 
-- Watch progress from another terminal: `tail -f results/run.log`
-- 230 trials; local 7B is slower per token than the API — expect several
+`qwen2.5:14b` (~9 GB) fits a 16 GB GPU and is the recommended primary local
+model; `qwen` (7b) and `llama` are the smaller alternatives. The raw command is
+still available if you want it:
+
+```bash
+uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b 2>&1 | tee -a results/run.log
+```
+
+- Watch progress from another terminal: `tail -f results/run_local.log`
+- 230 trials; local models are slower per token than the API — expect several
   hours. Disable sleep/hibernate before walking away.
 - Electricity: a few hours at ~0.5 kW ≈ pennies.
 
-Repeat with `--model llama3.1:8b` for the second model.
+Repeat with `qwen` / `llama` (or `all` for every model) for more rows.
 
 ## 4. If the run dies partway
 

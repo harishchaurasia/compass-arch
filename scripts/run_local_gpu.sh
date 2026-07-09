@@ -2,10 +2,11 @@
 # Driver for the local GPU eval runs (see RUNBOOK.md).
 #
 # Usage:
-#   ./scripts/run_local_gpu.sh smoke          # 3-task sanity check on qwen (~5 min)
+#   ./scripts/run_local_gpu.sh smoke [model]  # 3-task sanity check (default qwen2.5:7b)
 #   ./scripts/run_local_gpu.sh qwen           # full 115x2 on qwen2.5:7b
+#   ./scripts/run_local_gpu.sh qwen14         # full 115x2 on qwen2.5:14b (best-calibrated local)
 #   ./scripts/run_local_gpu.sh llama          # full 115x2 on llama3.1:8b
-#   ./scripts/run_local_gpu.sh all            # smoke, then qwen, then llama
+#   ./scripts/run_local_gpu.sh all            # smoke, then qwen, qwen14, llama
 #
 # Every run appends to results/run_local.log (tail -f it from another
 # terminal). After each full run the script verifies completeness and dumps
@@ -66,21 +67,24 @@ mkdir -p results
 
 case "$MODE" in
     smoke)
-        ensure_model qwen2.5:7b
-        say "=== SMOKE qwen2.5:7b $(date) ==="
-        uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:7b --limit 3 2>&1 | tee -a "$LOG"
+        SMOKE_MODEL="${2:-qwen2.5:7b}"
+        ensure_model "$SMOKE_MODEL"
+        say "=== SMOKE $SMOKE_MODEL $(date) ==="
+        uv run python scripts/run_tau_eval.py --provider ollama --model "$SMOKE_MODEL" --limit 3 2>&1 | tee -a "$LOG"
         say "smoke done — check the lines above against RUNBOOK.md §2 before launching the full run"
         ;;
-    qwen)  run_suite qwen2.5:7b ;;
-    llama) run_suite llama3.1:8b ;;
+    qwen)   run_suite qwen2.5:7b ;;
+    qwen14) run_suite qwen2.5:14b ;;
+    llama)  run_suite llama3.1:8b ;;
     all)
         "$0" smoke
-        say "smoke finished; starting full qwen run in 30s (Ctrl-C now if smoke looked broken)"
+        say "smoke finished; starting full runs in 30s (Ctrl-C now if smoke looked broken)"
         sleep 30
         run_suite qwen2.5:7b
+        run_suite qwen2.5:14b
         run_suite llama3.1:8b
         say "ALL DONE $(date) — send results/export_*.json (or results/trials.db) back to the Mac"
         ;;
     *)
-        echo "usage: $0 [smoke|qwen|llama|all]"; exit 1 ;;
+        echo "usage: $0 [smoke [model]|qwen|qwen14|llama|all]"; exit 1 ;;
 esac
