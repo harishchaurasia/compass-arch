@@ -11,7 +11,7 @@ Rules (locked on 5-task dev split, do not tune mid-experiment):
   - result clamped to [0.0, 1.0]
 """
 import pytest
-from compass.calibration import calibrate
+from compass.calibration import SHRINK_PRIOR, SHRINK_WEIGHT, calibrate
 from compass.trajectory import TrajectoryFeatures
 
 
@@ -125,3 +125,33 @@ def test_result_never_below_zero():
 def test_result_never_above_one():
     prob = calibrate(1.0, _features())
     assert prob <= 1.0
+
+
+# ── Phase 4 shrinkage variant ─────────────────────────────────────────────────
+
+def test_shrink_default_is_baseline():
+    """shrink=False must be byte-identical to the locked baseline."""
+    f = _features(step_count=6)
+    assert calibrate(0.9, f, shrink=False) == pytest.approx(calibrate(0.9, f))
+
+
+def test_shrink_pulls_confidence_toward_prior_before_penalties():
+    """A bare 1.0 on a clean trajectory shrinks toward the 0.5 prior."""
+    # 0.5*1.0 + 0.5*0.5 = 0.75, no trajectory penalties on a short clean run
+    prob = calibrate(1.0, _features(step_count=3), shrink=True)
+    assert prob == pytest.approx(SHRINK_WEIGHT * 1.0 + (1 - SHRINK_WEIGHT) * SHRINK_PRIOR)
+    assert prob == pytest.approx(0.75)
+
+
+def test_shrunk_high_confidence_falls_below_t_high():
+    """The point of the variant: an overconfident 1.0 no longer clears T_HIGH=0.8
+    on the first high-risk action, so decide() will abstain instead of execute."""
+    from compass.policy import T_HIGH
+    assert calibrate(1.0, _features(step_count=2), shrink=True) < T_HIGH
+
+
+def test_shrink_still_applies_trajectory_penalties():
+    """Shrinkage happens first, then the usual penalties stack on top."""
+    # shrink: 0.5*1.0+0.25 = 0.75; step_count=8 → -0.10 → 0.65
+    prob = calibrate(1.0, _features(step_count=8), shrink=True)
+    assert prob == pytest.approx(0.65)

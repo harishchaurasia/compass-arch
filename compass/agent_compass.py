@@ -141,11 +141,14 @@ def build_compass_agent(
     max_steps: int = 20,
     tool_risk: dict[str, str] | None = None,
     policy: str | None = None,
+    calibration_shrink: bool = False,
 ) -> StateGraph:
     """tool_risk maps tool name → static risk class ('low'|'medium'|'high').
     Effective risk is max(model's verbalized risk_level, tool class), so an
     under-labelled destructive tool is still gated as high. policy, when
-    given, is embedded in the system prompt (e.g. the τ-bench retail wiki)."""
+    given, is embedded in the system prompt (e.g. the τ-bench retail wiki).
+    calibration_shrink=True selects the Phase 4 shrinkage aggregator (baseline
+    stays the default)."""
     tool_risk = tool_risk or {}
     tool_map = {t.name: t for t in tools}
     # Local (Ollama) models don't reliably emit native tool_calls, so
@@ -196,7 +199,7 @@ def build_compass_agent(
         if step.action.final_answer is not None:
             return "finish"
         features = extract_features(state["steps"])
-        success_prob = calibrate(step.confidence, features)
+        success_prob = calibrate(step.confidence, features, shrink=calibration_shrink)
         risk = _effective_risk(step)
         decision = decide(success_prob, risk)
         # Escalate to abstain if SELF_VERIFY keeps firing without any execution
@@ -270,7 +273,9 @@ def build_compass_agent(
     def abstain(state: CompassState) -> dict:
         step = state["steps"][-1]
         risk = _effective_risk(step) if step.action.tool else step.risk_level
-        success_prob = calibrate(step.confidence, extract_features(state["steps"]))
+        success_prob = calibrate(
+            step.confidence, extract_features(state["steps"]), shrink=calibration_shrink
+        )
         msg = AIMessage(content=(
             f"ABSTAINING: calibrated success probability {success_prob:.2f} "
             f"(verbalized confidence {step.confidence:.2f}) is below threshold "

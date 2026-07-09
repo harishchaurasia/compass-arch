@@ -16,15 +16,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Windows consoles default stdout to cp1252, which can't encode the box-drawing
-# and ✓/✗ glyphs this script prints — that raises UnicodeEncodeError on the very
-# first print. Force UTF-8 so runs work identically on Windows and POSIX.
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
-
 import compass.tools.tau_retail.db as tau_db
 from compass.agent_compass import build_compass_agent
 from compass.agent_vanilla import build_vanilla_agent
@@ -33,6 +24,16 @@ from compass.tools.tau_retail import ALL_TOOLS, TOOL_RISK
 from eval.metrics import compound_failure_rate, selective_success_rate
 from eval.tau_bench_runner import run_trial
 from eval.trial_store import load_trials, save_trial
+
+# Windows consoles default stdout to cp1252, which can't encode the box-drawing
+# and ✓/✗ glyphs this script prints — that raises UnicodeEncodeError on the very
+# first print. Force UTF-8 so runs work identically on Windows and POSIX. (Runs
+# before any print in main(); import order is irrelevant.)
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 ROOT = Path(__file__).parent.parent
 TASKS_FILE = ROOT / "tasks" / "tau_bench" / "tasks_real.json"
@@ -66,6 +67,11 @@ def main() -> None:
         "--conditions", nargs="*", default=["vanilla", "compass"],
         choices=["vanilla", "compass"],
     )
+    parser.add_argument(
+        "--calibration", default="baseline", choices=["baseline", "shrinkage"],
+        help="compass aggregator variant; 'shrinkage' is the Phase 4 base-rate prior. "
+             "Rows are stored under model='<model>-shrink' so the locked baseline is untouched.",
+    )
     args = parser.parse_args()
 
     load_dotenv()
@@ -76,12 +82,19 @@ def main() -> None:
         tasks = tasks[: args.limit]
     policy = WIKI_FILE.read_text()
 
+    shrink = args.calibration == "shrinkage"
+    # Tag stored rows for the variant so its data never mixes with the locked
+    # baseline; the underlying provider model name is unchanged.
+    model_label = f"{args.model}-shrink" if shrink else args.model
+
     model = get_model(args.provider, args.model, temperature=0)
     vanilla = build_vanilla_agent(model, ALL_TOOLS, policy=policy)
-    compass = build_compass_agent(model, ALL_TOOLS, tool_risk=TOOL_RISK, policy=policy)
+    compass = build_compass_agent(
+        model, ALL_TOOLS, tool_risk=TOOL_RISK, policy=policy, calibration_shrink=shrink
+    )
 
     print(f"\n{'─' * 60}")
-    print(f"τ-bench retail (single-shot)  |  {len(tasks)} tasks × 2 conditions  |  {args.model}")
+    print(f"τ-bench retail (single-shot)  |  {len(tasks)} tasks × 2 conditions  |  {model_label}")
     print(f"{'─' * 60}\n")
 
     for task in tasks:
@@ -94,7 +107,7 @@ def main() -> None:
             print(f"  {task['id']} / {condition} ... ", end="", flush=True)
             try:
                 tau_db.reset()
-                result = run_trial(task, agent, condition=condition, model=args.model)
+                result = run_trial(task, agent, condition=condition, model=model_label)
                 save_trial(result, DB_PATH)
                 status = "✓" if result.success else "✗"
                 extra = ""
@@ -111,9 +124,9 @@ def main() -> None:
     # ── summary over this suite (all models/rows with tau_retail_ prefix) ────
     rows = [
         r for r in load_trials(DB_PATH)
-        if r.task_id.startswith("tau_retail_") and r.model == args.model
+        if r.task_id.startswith("tau_retail_") and r.model == model_label
     ]
-    print(f"\n{'─' * 60}\nSUMMARY ({args.model}, all tau_retail rows in db)\n{'─' * 60}")
+    print(f"\n{'─' * 60}\nSUMMARY ({model_label}, all tau_retail rows in db)\n{'─' * 60}")
     for condition in ("vanilla", "compass"):
         subset = [r for r in rows if r.condition == condition]
         if not subset:

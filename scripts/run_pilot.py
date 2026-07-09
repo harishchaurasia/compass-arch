@@ -12,14 +12,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
-# Windows consoles default stdout to cp1252, which can't encode the box-drawing
-# and ✓/✗ glyphs this script prints. Force UTF-8 (no-op on POSIX).
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
-
 import compass.tools.retail_db as db
 from compass.agent_compass import build_compass_agent
 from compass.agent_vanilla import build_vanilla_agent
@@ -35,6 +27,15 @@ from compass.tools.retail import (
 )
 from eval.tau_bench_runner import run_trial
 from eval.trial_store import load_trials, save_trial
+
+# Windows consoles default stdout to cp1252, which can't encode the box-drawing
+# and ✓/✗ glyphs this script prints. Force UTF-8 (no-op on POSIX); runs before
+# any print, so import order is irrelevant.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 TASKS_FILE = Path(__file__).parent.parent / "tasks" / "tau_bench" / "tasks.json"
 DB_PATH = Path(__file__).parent.parent / "results" / "trials.db"
