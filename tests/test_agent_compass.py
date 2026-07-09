@@ -482,6 +482,38 @@ def test_salvage_returns_none_on_no_json():
     assert salvage_step("I cannot help with that request.") is None
 
 
+def test_plan_retries_with_nudge_when_output_is_unsalvageable():
+    """First response is neither parseable nor salvageable (pure prose, no JSON);
+    plan() must nudge and retry rather than crash, then accept the valid step."""
+
+    class ProseThenValidModel:
+        def __init__(self):
+            self._calls = 0
+
+        def with_structured_output(self, schema, **kwargs):
+            return self
+
+        def invoke(self, messages):
+            self._calls += 1
+            if self._calls == 1:
+                # unclosed/rambling content, nothing recoverable
+                raw = AIMessage(content="I think the user wants to exchange, but //")
+                return {"parsed": None, "raw": raw, "parsing_error": "2 validation errors"}
+            step = CompassStep(
+                reasoning="Retried cleanly.",
+                action=CompassAction(final_answer="All set."),
+                confidence=0.9,
+                risk_level="low",
+            )
+            return {"parsed": step, "raw": None, "parsing_error": None}
+
+    model = ProseThenValidModel()
+    agent = build_compass_agent(model, [read_record])
+    state = agent.invoke(_init_state("exchange my order"))
+    assert model._calls == 2  # retried exactly once
+    assert "All set." in state["messages"][-1].content
+
+
 def test_plan_recovers_via_salvage_when_native_parse_is_none():
     """When with_structured_output returns parsed=None, plan() must fall back to
     salvaging the raw content instead of raising."""

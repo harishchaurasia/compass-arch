@@ -14,6 +14,14 @@ from compass.schemas import CompassAction, CompassStep  # noqa: F401 — re-expo
 from compass.trajectory import extract_features
 
 MAX_SELF_VERIFY = 2  # consecutive SELF_VERIFYs before escalating to ABSTAIN
+MAX_PARSE_RETRIES = 2  # extra plan() attempts with a corrective nudge before giving up
+
+_PARSE_RETRY_NUDGE = (
+    "Your previous response was not a valid step. Reply with ONLY a single JSON "
+    "object containing ALL of these fields: reasoning (string), action (object "
+    'with tool, args, final_answer), confidence (number 0.0-1.0), and risk_level '
+    '("low" | "medium" | "high"). No prose, no comments, no trailing text.'
+)
 
 
 def _append(left: list, right: list) -> list:
@@ -157,18 +165,26 @@ def build_compass_agent(
     system = _system_prompt(tools, policy)
 
     def plan(state: CompassState) -> dict:
-        result = structured_model.invoke([system] + list(state["messages"]))
-        step: CompassStep | None = result["parsed"]
-        if step is None:
-            content = getattr(result.get("raw"), "content", "") or ""
-            step = salvage_step(content)
-        if step is None:
-            raise ValueError(
-                f"Model returned unparseable output.\n"
-                f"Raw response: {result['raw']}\n"
-                f"Parse error: {result['parsing_error']}"
-            )
-        return {"steps": [step]}
+        # Parse the next step: native structured output → content salvage →
+        # a bounded retry that nudges the model to re-emit a valid step. Weak
+        # local models sometimes drop required fields or ramble prose into the
+        # JSON; feeding the error back beats crashing the whole trial.
+        messages = [system, *state["messages"]]
+        result = None
+        for _ in range(1 + MAX_PARSE_RETRIES):
+            result = structured_model.invoke(messages)
+            step: CompassStep | None = result["parsed"]
+            if step is None:
+                content = getattr(result.get("raw"), "content", "") or ""
+                step = salvage_step(content)
+            if step is not None:
+                return {"steps": [step]}
+            messages = [*messages, HumanMessage(content=_PARSE_RETRY_NUDGE)]
+        raise ValueError(
+            f"Model returned unparseable output after {MAX_PARSE_RETRIES} retries.\n"
+            f"Raw response: {result['raw']}\n"
+            f"Parse error: {result['parsing_error']}"
+        )
 
     def _effective_risk(step: CompassStep) -> str:
         return max_risk(step.risk_level, tool_risk.get(step.action.tool, "low"))
