@@ -6,10 +6,19 @@ Usage:
 Writes results to results/trials.db and prints a summary table.
 """
 import json
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+
+# Windows consoles default stdout to cp1252, which can't encode the box-drawing
+# and ✓/✗ glyphs this script prints. Force UTF-8 (no-op on POSIX).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 import compass.tools.retail_db as db
 from compass.agent_compass import build_compass_agent

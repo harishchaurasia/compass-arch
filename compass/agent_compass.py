@@ -1,11 +1,12 @@
 """Compass calibrated agent: structured output + trajectory features + action policy."""
 import json
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
+from pydantic import ValidationError
 
 from compass.calibration import calibrate
 from compass.policy import PolicyDecision, decide, max_risk
@@ -17,6 +18,73 @@ MAX_SELF_VERIFY = 2  # consecutive SELF_VERIFYs before escalating to ABSTAIN
 
 def _append(left: list, right: list) -> list:
     return left + right
+
+
+def _first_json_object(text: str) -> dict | None:
+    """Return the first balanced top-level JSON object in `text`, or None.
+
+    Local models (Ollama) frequently wrap their JSON in prose or markdown
+    fences and sometimes emit several blobs; brace-matching grabs the first
+    complete object and ignores the rest. String-aware so braces inside string
+    literals don't throw off the depth count."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    obj = json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+                return obj if isinstance(obj, dict) else None
+    return None
+
+
+def salvage_step(content: str) -> CompassStep | None:
+    """Best-effort CompassStep from free-form model output when native
+    structured parsing returned None. Handles the two shapes local models
+    emit: the CompassStep shape directly, and the OpenAI-style function
+    envelope {"name": ..., "parameters"/"arguments": {...}}."""
+    blob = _first_json_object(content)
+    if blob is None:
+        return None
+    # Shape 1: already CompassStep-shaped.
+    try:
+        return CompassStep.model_validate(blob)
+    except ValidationError:
+        pass
+    # Shape 2: a bare function-call envelope — map it onto an action.
+    name = blob.get("name")
+    if isinstance(name, str) and name:
+        raw_args: Any = blob.get("parameters", blob.get("arguments", {}))
+        args = raw_args if isinstance(raw_args, dict) else {}
+        try:
+            return CompassStep(
+                reasoning=str(blob.get("reasoning", "(recovered from tool-call envelope)")),
+                action=CompassAction(tool=name, args=args),
+                confidence=float(blob.get("confidence", 0.5)),
+                risk_level=blob.get("risk_level") if blob.get("risk_level") in ("low", "medium", "high") else "medium",
+            )
+        except (ValidationError, ValueError, TypeError):
+            return None
+    return None
 
 
 class CompassState(TypedDict):
@@ -72,20 +140,34 @@ def build_compass_agent(
     given, is embedded in the system prompt (e.g. the τ-bench retail wiki)."""
     tool_risk = tool_risk or {}
     tool_map = {t.name: t for t in tools}
-    structured_model = model.with_structured_output(
-        CompassStep, method="function_calling", strict=False, include_raw=True
-    )
+    # Local (Ollama) models don't reliably emit native tool_calls, so
+    # method="function_calling" leaves `parsed` empty — they put schema-shaped
+    # JSON in message content instead. json_schema uses Ollama's constrained
+    # decoding to force valid JSON there. API models keep function_calling
+    # (that path already has data and works). Either way, salvage_step below
+    # recovers a step from raw content if native parsing still comes back None.
+    if type(model).__name__ == "ChatOllama":
+        structured_model = model.with_structured_output(
+            CompassStep, method="json_schema", include_raw=True
+        )
+    else:
+        structured_model = model.with_structured_output(
+            CompassStep, method="function_calling", strict=False, include_raw=True
+        )
     system = _system_prompt(tools, policy)
 
     def plan(state: CompassState) -> dict:
         result = structured_model.invoke([system] + list(state["messages"]))
-        if result["parsed"] is None:
+        step: CompassStep | None = result["parsed"]
+        if step is None:
+            content = getattr(result.get("raw"), "content", "") or ""
+            step = salvage_step(content)
+        if step is None:
             raise ValueError(
                 f"Model returned unparseable output.\n"
                 f"Raw response: {result['raw']}\n"
                 f"Parse error: {result['parsing_error']}"
             )
-        step: CompassStep = result["parsed"]
         return {"steps": [step]}
 
     def _effective_risk(step: CompassStep) -> str:
@@ -117,8 +199,33 @@ def build_compass_agent(
     def execute(state: CompassState) -> dict:
         step = state["steps"][-1]
         tool_name = step.action.tool
-        tool_args = step.action.args
-        result = tool_map[tool_name].invoke(tool_args)
+        tool = tool_map.get(tool_name) if tool_name else None
+        if tool is None:
+            # The step routed to EXECUTE but names no real tool — either tool is
+            # None (no action, no final answer) or a hallucinated name (e.g. a
+            # local model inventing "Predictive Analytics"). Feed the error back
+            # as an observation so the model can recover on the next step rather
+            # than crashing the whole trial; max_steps still bounds the loop.
+            available = ", ".join(sorted(tool_map)) or "(none available)"
+            msg = (
+                f"No valid tool call was made (action.tool={tool_name!r} is not an "
+                f"available tool). Either call one of [{available}] with the exact "
+                f"parameter names, or set action.final_answer to respond."
+            )
+            return {"messages": [HumanMessage(content=msg)], "verified_action": ""}
+        try:
+            result = tool.invoke(step.action.args)
+        except Exception as e:
+            # The tool exists but rejected the call (e.g. Pydantic arg validation,
+            # a not-found id). Surface it as an observation so the model can fix
+            # the call rather than aborting the whole trial. Not counted as
+            # progress, so the self_verify streak keeps running toward abstain.
+            msg = (
+                f"Tool '{tool_name}' failed: {type(e).__name__}: {e}. "
+                f"Check the parameter names and values against the tool signature "
+                f"and try again, or set action.final_answer to respond."
+            )
+            return {"messages": [HumanMessage(content=msg)], "verified_action": ""}
         return {
             "messages": [HumanMessage(content=f"Tool '{tool_name}' returned: {result}")],
             "self_verify_count": 0,  # real progress — reset the streak

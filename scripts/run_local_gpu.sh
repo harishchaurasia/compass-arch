@@ -14,6 +14,14 @@
 set -u
 cd "$(dirname "$0")/.."
 
+# uv installs to %USERPROFILE%\.local\bin and Ollama to LOCALAPPDATA on Windows.
+# A freshly opened Git Bash may not have picked those up on PATH yet, so add them
+# for this session (matches windows_setup.sh). No-op if already present or on POSIX.
+if command -v cygpath >/dev/null 2>&1; then
+    export PATH="$(cygpath "${USERPROFILE:-$HOME}")/.local/bin:$PATH"
+    export PATH="$(cygpath "${LOCALAPPDATA:-$USERPROFILE/AppData/Local}")/Programs/Ollama:$PATH"
+fi
+
 LOG=results/run_local.log
 MODE="${1:-all}"
 

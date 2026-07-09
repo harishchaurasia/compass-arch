@@ -3,10 +3,15 @@
 FakeCompassModel supports with_structured_output() and returns CompassStep
 objects in sequence — no real LLM calls.
 """
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 
-from compass.agent_compass import CompassAction, CompassStep, build_compass_agent
+from compass.agent_compass import (
+    CompassAction,
+    CompassStep,
+    build_compass_agent,
+    salvage_step,
+)
 
 # ── fake model ────────────────────────────────────────────────────────────────
 
@@ -426,6 +431,181 @@ def test_execute_resets_self_verify_count():
 
     assert state["abstained"] is False
     assert "All done." in state["messages"][-1].content
+
+
+# ── salvage: recovering a step from unstructured local-model output ─────────────
+
+def test_salvage_parses_compass_step_shape():
+    """Model emitted the CompassStep shape directly as JSON in content."""
+    content = (
+        'Here is my step:\n```json\n'
+        '{"reasoning": "look up user", '
+        '"action": {"tool": "find_user", "args": {"email": "a@b.com"}}, '
+        '"confidence": 0.7, "risk_level": "low"}\n```'
+    )
+    step = salvage_step(content)
+    assert step is not None
+    assert step.action.tool == "find_user"
+    assert step.action.args == {"email": "a@b.com"}
+    assert step.confidence == 0.7
+    assert step.risk_level == "low"
+
+
+def test_salvage_maps_function_call_envelope():
+    """Real llama3.1:8b failure shape: a bare {name, parameters} tool envelope
+    with no CompassStep fields — mapped onto an action with safe defaults."""
+    content = (
+        '{"name": "modify_pending_order_items", '
+        '"parameters": {"order_id": "W2378156", "payment_method_id": "gift_card"}}'
+    )
+    step = salvage_step(content)
+    assert step is not None
+    assert step.action.tool == "modify_pending_order_items"
+    assert step.action.args["order_id"] == "W2378156"
+    assert 0.0 <= step.confidence <= 1.0
+    assert step.risk_level in ("low", "medium", "high")
+
+
+def test_salvage_grabs_first_object_amid_prose_and_extra_blobs():
+    """llama sometimes free-writes several JSON blobs plus prose; take the first."""
+    content = (
+        '{"name": "list_all_product_types", "parameters": {}} \n\n'
+        'The output of the tool call is:\n{"product_types": [{"name": "T-Shirt"}]}'
+    )
+    step = salvage_step(content)
+    assert step is not None
+    assert step.action.tool == "list_all_product_types"
+    assert step.action.args == {}
+
+
+def test_salvage_returns_none_on_no_json():
+    assert salvage_step("I cannot help with that request.") is None
+
+
+def test_plan_recovers_via_salvage_when_native_parse_is_none():
+    """When with_structured_output returns parsed=None, plan() must fall back to
+    salvaging the raw content instead of raising."""
+
+    class UnparseableThenDoneModel:
+        """First call: native parse fails but raw content holds an envelope.
+        Second call: a clean final-answer step so the graph terminates."""
+
+        def __init__(self):
+            self._calls = 0
+
+        def with_structured_output(self, schema, **kwargs):
+            return self
+
+        def invoke(self, messages):
+            self._calls += 1
+            if self._calls == 1:
+                raw = AIMessage(
+                    content='{"name": "read_record", "parameters": {"record_id": "r1"}}'
+                )
+                return {"parsed": None, "raw": raw, "parsing_error": None}
+            step = CompassStep(
+                reasoning="done",
+                action=CompassAction(final_answer="Read complete."),
+                confidence=0.9,
+                risk_level="low",
+            )
+            return {"parsed": step, "raw": None, "parsing_error": None}
+
+    agent = build_compass_agent(UnparseableThenDoneModel(), [read_record])
+    state = agent.invoke(_init_state("Read r1"))
+    assert state["abstained"] is False
+    assert "Read complete." in state["messages"][-1].content
+
+
+def test_unknown_tool_feeds_back_instead_of_crashing():
+    """A step that routes to EXECUTE but names a tool that doesn't exist (or
+    None) must not raise KeyError — it feeds the error back so the model can
+    recover on the next step."""
+    steps = [
+        # hallucinated tool name, high confidence + low risk → routes to execute
+        CompassStep(
+            reasoning="I'll use my analytics tool.",
+            action=CompassAction(tool="predictive_analytics", args={"x": 1}),
+            confidence=0.95,
+            risk_level="low",
+        ),
+        # after the feed-back observation, model gives a valid final answer
+        CompassStep(
+            reasoning="No such tool; just answer.",
+            action=CompassAction(final_answer="Here is your answer."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(FakeCompassModel(steps), [read_record])
+    state = agent.invoke(_init_state("Do something"))
+
+    assert state["abstained"] is False
+    assert "Here is your answer." in state["messages"][-1].content
+    all_content = " ".join(
+        m.content for m in state["messages"] if hasattr(m, "content")
+    ).lower()
+    assert "not an available tool" in all_content
+
+
+def test_tool_invocation_error_feeds_back_instead_of_crashing():
+    """A real tool that raises on bad args (e.g. Pydantic validation) must feed
+    the error back, not abort the trial."""
+
+    @tool
+    def strict_tool(count: int) -> str:
+        """Needs an int count."""
+        if not isinstance(count, int):
+            raise ValueError("count must be an int")
+        return f"counted {count}"
+
+    steps = [
+        # bad args → tool raises → feed back
+        CompassStep(
+            reasoning="Call it.",
+            action=CompassAction(tool="strict_tool", args={"count": "not-an-int"}),
+            confidence=0.95,
+            risk_level="low",
+        ),
+        # model recovers with a final answer
+        CompassStep(
+            reasoning="Give up on the tool.",
+            action=CompassAction(final_answer="Answered without the tool."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(FakeCompassModel(steps), [strict_tool])
+    state = agent.invoke(_init_state("count something"))
+
+    assert state["abstained"] is False
+    assert "Answered without the tool." in state["messages"][-1].content
+    all_content = " ".join(
+        m.content for m in state["messages"] if hasattr(m, "content")
+    ).lower()
+    assert "failed" in all_content
+
+
+def test_none_tool_without_final_answer_feeds_back():
+    """A no-op step (tool is None AND final_answer is None) must feed back, not
+    crash on tool_map[None]."""
+    steps = [
+        CompassStep(
+            reasoning="(empty action)",
+            action=CompassAction(tool=None, args={}, final_answer=None),
+            confidence=0.95,
+            risk_level="low",
+        ),
+        CompassStep(
+            reasoning="Now I'll answer.",
+            action=CompassAction(final_answer="Done."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(FakeCompassModel(steps), [read_record])
+    state = agent.invoke(_init_state("hi"))
+    assert "Done." in state["messages"][-1].content
 
 
 def test_policy_included_in_system_prompt():

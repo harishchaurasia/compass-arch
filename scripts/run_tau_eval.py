@@ -11,9 +11,19 @@ distinguishing them from the homemade retail_* suite).
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# Windows consoles default stdout to cp1252, which can't encode the box-drawing
+# and ✓/✗ glyphs this script prints — that raises UnicodeEncodeError on the very
+# first print. Force UTF-8 so runs work identically on Windows and POSIX.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 import compass.tools.tau_retail.db as tau_db
 from compass.agent_compass import build_compass_agent
