@@ -5,6 +5,7 @@ Reads results/trials.db; renders one figure set spanning every model present
 
 Run: uv run python analysis/make_figures.py
 """
+import json
 import sqlite3
 from pathlib import Path
 
@@ -42,11 +43,22 @@ plt.rcParams.update({
 })
 
 
-def models_in_db() -> list[str]:
+def models_in_db(min_per_condition: int = 100) -> list[str]:
+    """Models with a full vanilla+compass tau_retail run (both conditions
+    >= min_per_condition trials). Filters out smoke tests and compass-only
+    variant rows so the charts never render partial data."""
     db = sqlite3.connect(ROOT / "results" / "trials.db")
-    return [r[0] for r in db.execute(
-        "SELECT DISTINCT model FROM trials WHERE task_id LIKE 'tau_retail%' ORDER BY model"
-    )]
+    counts: dict[str, dict[str, int]] = {}
+    for model, cond, n in db.execute(
+        "SELECT model, condition, COUNT(*) FROM trials "
+        "WHERE task_id LIKE 'tau_retail%' GROUP BY model, condition"
+    ):
+        counts.setdefault(model, {})[cond] = n
+    return sorted(
+        m for m, c in counts.items()
+        if c.get("vanilla", 0) >= min_per_condition
+        and c.get("compass", 0) >= min_per_condition
+    )
 
 
 def metrics_for(model: str) -> dict:
@@ -71,52 +83,91 @@ def _bar_label(ax, bars, color=INK):
                     va="center", ha="left", fontsize=10, color=color)
 
 
+def cond_metrics(model: str, cond: str) -> dict:
+    """success / abstention / wrong-mutation rates for one model+condition,
+    read straight from the tau_retail rows (works for compass-only variants)."""
+    db = sqlite3.connect(ROOT / "results" / "trials.db")
+    rows = db.execute(
+        "SELECT success, abstained, mutated_order_ids FROM trials "
+        "WHERE task_id LIKE 'tau_retail%' AND model = ? AND condition = ?",
+        (model, cond),
+    ).fetchall()
+    n = len(rows)
+    return {
+        "success": sum(bool(s) for s, _, _ in rows) / n,
+        "abstained": sum(bool(a) for _, a, _ in rows) / n,
+        "compound": sum(bool(json.loads(m)) and not s for s, _, m in rows) / n,
+    }
+
+
+# A calibration variant to overlay on its base model's panel (model -> variant).
+SHRINK_OF = {"qwen2.5:14b": "qwen2.5:14b-shrink"}
+
+# fixed series styling; the shrinkage bar only appears where SHRINK_OF has data
+SERIES = [
+    ("Vanilla ReAct", GRAY, lambda m: cond_metrics(m, "vanilla")),
+    ("Compass", BLUE, lambda m: cond_metrics(m, "compass")),
+    ("Compass + shrinkage", AQUA,
+     lambda m: cond_metrics(SHRINK_OF[m], "compass") if m in SHRINK_OF else None),
+]
+
+
 def fig_headline(models: list[str]) -> None:
-    """Grouped horizontal bars: vanilla (gray baseline) vs compass (accent)."""
+    """Grouped horizontal bars per model. Vanilla vs Compass everywhere; the
+    base-rate-prior (shrinkage) variant is overlaid only where it was run."""
     metric_labels = [("success", "Task success"),
                      ("compound", "Compound failure\n(destructive action while wrong)"),
                      ("abstained", "Abstention")]
+    panels = {m: [(lbl, col, fn(m)) for lbl, col, fn in SERIES if fn(m) is not None]
+              for m in models}
     fig, axes = plt.subplots(
-        1, len(models), figsize=(5.4 * len(models) + 1, 3.4), squeeze=False)
+        1, len(models), figsize=(6.4 * len(models), 5.4), squeeze=False)
     for ax, model in zip(axes[0], models):
-        m = metrics_for(model)
-        ys = range(len(metric_labels))
-        h = 0.32
-        van = ax.barh([y + h / 2 + 0.02 for y in ys],
-                      [m["vanilla"][k] for k, _ in metric_labels],
-                      height=h, color=GRAY, label="Vanilla ReAct")
-        com = ax.barh([y - h / 2 - 0.02 for y in ys],
-                      [m["compass"][k] for k, _ in metric_labels],
-                      height=h, color=BLUE, label="Compass")
-        _bar_label(ax, van, INK_2)
-        _bar_label(ax, com, INK)
-        ax.set_yticks(list(ys), [lbl for _, lbl in metric_labels], fontsize=10, color=INK)
-        ax.set_xlim(0, 1.02)
+        series = panels[model]
+        nser = len(series)
+        ys = list(range(len(metric_labels)))
+        group_h = 0.8
+        h = group_h / nser
+        for si, (_lbl, color, mets) in enumerate(series):
+            offset = (si - (nser - 1) / 2) * h
+            bars = ax.barh([y + offset for y in ys],
+                           [mets[k] for k, _ in metric_labels],
+                           height=h * 0.86, color=color)
+            _bar_label(ax, bars, INK)
+        ax.set_yticks(ys, [lbl for _, lbl in metric_labels], fontsize=10, color=INK)
+        ax.set_xlim(0, 1.06)
         ax.invert_yaxis()
-        ax.set_title(model, fontsize=11, color=INK_2, loc="left")
+        ax.set_title(model, fontsize=12, color=INK_2, loc="left")
         ax.xaxis.set_major_formatter(lambda v, _: f"{v:.0%}")
         ax.grid(axis="x", color=GRID, linewidth=0.8)
         ax.set_axisbelow(True)
         for spine in ("top", "right", "left"):
             ax.spines[spine].set_visible(False)
-    axes[0][0].legend(loc="lower right", frameon=False, fontsize=9)
-    fig.suptitle("Compass trades task success for far fewer destructive failures",
-                 fontsize=13, fontweight="bold", x=0.01, y=0.985, ha="left", va="top")
-    fig.text(0.01, 0.885, "115 τ-bench retail tasks (single-shot) × 2 conditions per model",
-             fontsize=9, color=INK_2, va="top")
-    fig.tight_layout(rect=(0, 0, 1, 0.82))
+    handles = [plt.Rectangle((0, 0), 1, 1, color=col) for _, col, _ in SERIES]
+    fig.legend(handles, [lbl for lbl, _, _ in SERIES], loc="lower center",
+               ncol=3, frameon=False, fontsize=10, bbox_to_anchor=(0.5, 0.035))
+    fig.suptitle("Compass trades some task success for far fewer destructive failures",
+                 fontsize=14, fontweight="bold", x=0.01, y=0.98, ha="left", va="top")
+    fig.text(0.01, 0.9, "115 τ-bench retail tasks (single-shot), per model",
+             fontsize=10, color=INK_2, va="top")
+    fig.text(0.5, 0.125,
+             "On Qwen2.5 14B the model's confidence is flat and uninformative, so baseline "
+             "Compass can't gate the first risky action. The base-rate-prior (shrinkage) "
+             "variant drives destructive failures to zero.",
+             fontsize=8.5, color=MUTED, ha="center", va="center", wrap=True)
+    fig.tight_layout(rect=(0, 0.17, 1, 0.85))
     fig.savefig(FIG_DIR / "headline_metrics.png", dpi=200)
     plt.close(fig)
 
 
 CAT_STYLE = {
     # category → (display label, story role)
-    "both_fail_v_mutates":    ("Both fail — vanilla mutates DB, Compass doesn't", "compass"),
-    "vanilla_only_abstained": ("Vanilla succeeds — Compass abstained", "vanilla"),
-    "vanilla_only_committed": ("Vanilla succeeds — Compass acted and failed", "vanilla"),
-    "both_fail_both_mutate":  ("Both fail — both mutate the DB", "neutral"),
-    "both_fail_clean":        ("Both fail — no destructive action", "neutral"),
-    "compass_only":           ("Compass succeeds — vanilla fails", "compass"),
+    "both_fail_v_mutates":    ("Both fail - vanilla mutates DB, Compass doesn't", "compass"),
+    "vanilla_only_abstained": ("Vanilla succeeds - Compass abstained", "vanilla"),
+    "vanilla_only_committed": ("Vanilla succeeds - Compass acted and failed", "vanilla"),
+    "both_fail_both_mutate":  ("Both fail - both mutate the DB", "neutral"),
+    "both_fail_clean":        ("Both fail - no destructive action", "neutral"),
+    "compass_only":           ("Compass succeeds - vanilla fails", "compass"),
     "both_succeed":           ("Both succeed", "neutral"),
 }
 ROLE_COLOR = {"compass": BLUE, "vanilla": ORANGE, "neutral": GRAY}
@@ -147,7 +198,7 @@ def fig_categories(model: str) -> None:
                for r in ("compass", "vanilla", "neutral")]
     ax.legend(handles, ["Compass better", "Vanilla better", "Neither"],
               loc="lower right", frameon=False, fontsize=9)
-    ax.set_title(f"Where each agent wins — all 115 tasks ({model})",
+    ax.set_title(f"Where each agent wins - all 115 tasks ({model})",
                  fontsize=13, fontweight="bold", loc="left", pad=14)
     fig.tight_layout()
     fig.savefig(FIG_DIR / "outcome_categories.png", dpi=200)
@@ -172,7 +223,7 @@ def fig_threshold(model: str) -> None:
     ax.axvline(0.8, color=BASELINE, linewidth=1, linestyle=(0, (4, 3)))
     ax.annotate("shipped\nT_HIGH", (0.8, 0.97), fontsize=9, color=MUTED,
                 ha="center", va="top")
-    ax.set_xlabel("T_HIGH — confidence threshold for high-risk actions")
+    ax.set_xlabel("T_HIGH - confidence threshold for high-risk actions")
     ax.set_ylim(0, 1.02)
     ax.set_xlim(min(ts) - 0.01, max(ts) + 0.14)
     ax.set_xticks([t for t in ts if t not in (0.75, 0.85)])
