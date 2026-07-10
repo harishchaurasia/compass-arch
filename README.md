@@ -38,10 +38,25 @@ CompassStep (reasoning · action · confidence · risk)
   → policy               (EXECUTE / SELF_VERIFY / ABSTAIN, conditioned on risk)
 ```
 
-## Results (Qwen2.5 14B · 115 τ-bench retail tasks · single-shot)
+## Results (115 τ-bench retail tasks · single-shot)
 
-Run against a deliberately overconfident local model, where verbalized confidence is a flat,
-useless ≈1.0 - the hardest case for a calibration layer.
+Two models, same suite. Compound failure = the agent took a destructive, irreversible action
+while wrong (mutated a real order it shouldn't have).
+
+**gpt-4o-mini (frontier model).** Plain ReAct is dangerous here: it mutates the wrong order on
+95 of 115 tasks. Compass cuts that by roughly two thirds, out of the box.
+
+| Metric | Vanilla | Compass |
+|---|---|---|
+| Selective success | 33.0% | 15.6% |
+| Abstention rate | 0.0% | 60.9% |
+| **Destructive compound failures** | 54.8% | **18.3%** |
+| Trials that mutated a real order | 95 | **24** |
+
+**Qwen2.5 14B (weak, overconfident model).** Verbalized confidence is a flat, useless ~1.0 here,
+the hardest case for a calibration layer. Baseline Compass is blind to the *first* high-risk
+action (no trajectory signal has accumulated yet), so it actually makes things worse. The
+shrinkage variant, which discounts an unearned "100%" before the agent acts, closes the gap.
 
 | Metric | Vanilla | Compass | Compass + shrinkage |
 |---|---|---|---|
@@ -50,15 +65,11 @@ useless ≈1.0 - the hardest case for a calibration layer.
 | **Destructive compound failures** | 6.1% | 18.3% | **0.0%** |
 | Trials that mutated a real order | 7 | 24 | **0** |
 
-A naive gate is blind to the *first* high-risk action (trajectory penalties haven't accumulated
-yet, verbalized confidence carries no signal) - so it actually made destructive failures worse.
-The **shrinkage** variant discounts that first unearned "100%" and eliminated every irreversible
-mutation on this benchmark.
-
-**Honest scope:** this is one model, one domain. "Zero" means zero *on these 115 tasks*, not a
-proof of perfection. Safety also costs coverage here - the agent asks for help more often
-(+16pp abstention, −3pp success). The open question ([FINDINGS.md](FINDINGS.md)) is recovering
-that coverage with an *earlier* honest signal.
+**The cross-model finding:** calibration works when the model's confidence carries signal
+(gpt-4o-mini), and needs an extra base-rate prior when it doesn't (Qwen). Safety costs coverage
+either way, the agent abstains and asks for help more often. "Zero" means zero *on these 115
+tasks*, not a proof of perfection. The open question ([FINDINGS.md](FINDINGS.md)) is recovering
+that lost coverage with an *earlier* honest signal.
 
 ## Reproduce
 
@@ -78,8 +89,9 @@ Local-GPU / Windows runners and troubleshooting live in [RUNBOOK.md](RUNBOOK.md)
 Heading toward production, built in the open - not there yet.
 
 - ✅ End-to-end calibrated agent + locked rule-based aggregator
-- ✅ Full A/B on Qwen2.5 14B; shrinkage variant gates the first destructive action
-- 🔜 Benchmark across more open-source local models - **Qwen2.5 7B**, **Llama 3.1 8B**
+- ✅ Full 115-task A/B on **gpt-4o-mini**: compound failures 54.8% -> 18.3%
+- ✅ Full 115-task A/B on **Qwen2.5 14B**; shrinkage variant gates the first destructive action
+- 🔜 Extend the benchmark to more open-source local models: **Qwen2.5 7B**, **Llama 3.1 8B**
 - 🔜 Recover the coverage that caution costs (an earlier, honest pre-action signal)
 
 Contributions and PRs welcome - if agent reliability is your world, let's connect.
