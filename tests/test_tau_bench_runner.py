@@ -238,6 +238,28 @@ def test_run_trial_compass_records_calibrated_success_probs():
     assert result.success_probs == [0.8, 0.9]
 
 
+def test_replay_success_probs_threads_shrink_flag():
+    """Regression: _replay_success_probs must honour the shrink flag so stored
+    success_probs match the aggregator that actually gated the run. Before the
+    fix it always replayed the baseline, silently mis-recording every
+    shrinkage-variant trial's success_probs."""
+    from types import SimpleNamespace
+
+    from eval.tau_bench_runner import _replay_success_probs
+
+    steps = [
+        SimpleNamespace(confidence=1.0, action=SimpleNamespace(tool="read_order")),
+        SimpleNamespace(confidence=0.8, action=SimpleNamespace(tool=None)),
+    ]
+    baseline = _replay_success_probs(steps, shrink=False)
+    shrunk = _replay_success_probs(steps, shrink=True)
+
+    assert baseline == [1.0, 0.8]
+    # shrink pulls confidence toward the 0.5 prior before any penalty: 0.5*c + 0.25
+    assert shrunk == [0.75, 0.65]
+    assert all(s <= b for s, b in zip(shrunk, baseline))
+
+
 def test_run_trial_compass_records_risk_levels():
     """Per-step risk_level must be persisted so we can analyze whether the
     model labels destructive actions high-risk (i.e. whether the policy can

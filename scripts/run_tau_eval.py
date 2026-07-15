@@ -107,7 +107,10 @@ def main() -> None:
             print(f"  {task['id']} / {condition} ... ", end="", flush=True)
             try:
                 tau_db.reset()
-                result = run_trial(task, agent, condition=condition, model=model_label)
+                result = run_trial(
+                    task, agent, condition=condition, model=model_label,
+                    calibration_shrink=shrink,
+                )
                 save_trial(result, DB_PATH)
                 status = "✓" if result.success else "✗"
                 extra = ""

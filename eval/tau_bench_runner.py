@@ -31,15 +31,19 @@ def _serialize_trace(final_state: dict, condition: str) -> dict:
     return {"steps": steps, "messages": messages}
 
 
-def _replay_success_probs(steps: list) -> list[float]:
+def _replay_success_probs(steps: list, shrink: bool = False) -> list[float]:
     """Recompute the calibrated success_prob the route edge saw at each step.
+
+    `shrink` must match the aggregator variant the run actually gated on
+    (agent_compass builds the graph with calibration_shrink=...); otherwise
+    the stored success_probs diverge from the decisions they claim to record.
 
     Valid only while calibrate() is a pure function of the step history —
     if it ever grows state (e.g. a learned probe), success_prob must be
     captured inside the agent instead of replayed here.
     """
     return [
-        calibrate(step.confidence, extract_features(steps[: i + 1]))
+        calibrate(step.confidence, extract_features(steps[: i + 1]), shrink=shrink)
         for i, step in enumerate(steps)
     ]
 
@@ -80,8 +84,14 @@ def _grade_homemade(
     return expected.lower() in final_text.lower()
 
 
-def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
+def run_trial(
+    task: dict, agent, condition: str, model: str, calibration_shrink: bool = False
+) -> TrialResult:
     """Run a single trial. Agent must be a compiled LangGraph graph.
+
+    `calibration_shrink` must match the flag the agent graph was built with,
+    so the replayed success_probs reflect the aggregator that actually gated
+    the run.
 
     Two task flavours: homemade tasks grade on expected_order_state /
     invariant_order_id / substring; real τ-bench tasks (marked by a
@@ -152,7 +162,7 @@ def run_trial(task: dict, agent, condition: str, model: str) -> TrialResult:
         confidence_scores = [
             s.confidence for s in compass_steps if hasattr(s, "confidence")
         ]
-        success_probs = _replay_success_probs(compass_steps)
+        success_probs = _replay_success_probs(compass_steps, shrink=calibration_shrink)
         risk_levels = [
             s.risk_level for s in compass_steps if hasattr(s, "risk_level")
         ]
