@@ -1,0 +1,5 @@
+# Normalize line endings so clones behave the same on every OS.
+* text=auto
+
+# Shell scripts must stay LF or they break when run on Linux / CI.
+*.sh text eol=lf
