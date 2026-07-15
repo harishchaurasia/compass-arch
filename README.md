@@ -2,6 +2,10 @@
 
 **A training-free calibration layer that teaches AI agents when they *don't* actually know.**
 
+[![CI](https://github.com/harishchaurasia/compass-arch/actions/workflows/ci.yml/badge.svg)](https://github.com/harishchaurasia/compass-arch/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
+
 Compass wraps a standard ReAct agent and decides - before every action - whether to
 **execute, self-verify, or abstain**, based on how trustworthy the agent's own confidence
 really is. No fine-tuning, no extra model. It runs on top of any frontier or local LLM.
@@ -109,3 +113,10 @@ Contributions and PRs welcome - if agent reliability is your world, let's connec
 uv run pytest          # tests
 uv run ruff check .    # lint
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and the ground rules that keep the
+results honest.
+
+## License
+
+[MIT](LICENSE) © Harish Chaurasia

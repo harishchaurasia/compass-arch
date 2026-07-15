@@ -2,6 +2,9 @@
 name = "compass"
 version = "0.1.0"
 description = "Calibrated agent architecture for production reliability"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Harish Chaurasia" }]
 requires-python = ">=3.11"
 dependencies = [
     "langgraph>=0.4",
@@ -27,6 +30,9 @@ dev = [
 [tool.ruff]
 # .claude holds skills and parked git worktrees — not project source
 extend-exclude = [".claude"]
+
+[project.urls]
+Repository = "https://github.com/harishchaurasia/compass-arch"
 
 [build-system]
 requires = ["hatchling"]
