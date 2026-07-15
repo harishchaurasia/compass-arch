@@ -7,6 +7,8 @@ dist/
 .env
 .DS_Store
 results/*.db
+results/**/*.db
 results/*.db.bak-*
 results/*.log
 results/export_*.json
+claude-session.txt

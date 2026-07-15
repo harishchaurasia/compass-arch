@@ -37,7 +37,7 @@ CompassStep
 
 `T_MED` and `T_HIGH` in `policy.py` are the tunable thresholds. They are locked on a 5-task dev split before eval — do not tune them mid-experiment.
 
-**`compass/models.py`** — `get_model(provider, model_name)` wraps `init_chat_model` for cross-provider access. `SUPPORTED_MODELS` maps the four experimental models (Anthropic, OpenAI, Google, Ollama/Qwen).
+**`compass/models.py`** — `get_model(provider, model_name)` wraps `init_chat_model` for cross-provider access. `EVALUATED_MODELS` lists what actually has a full 115-task A/B (openai/gpt-4o-mini + the local Ollama models); `DEFAULT_MODELS` is the per-provider fallback id.
 
 **`eval/`** — two runners (`tau_bench_runner.py`, `mcp_runner.py`) write one row per trial to `results/trials.db` (SQLite). `metrics.py` computes ECE, Brier score, selective success rate, and compound failure rate from those rows.
 

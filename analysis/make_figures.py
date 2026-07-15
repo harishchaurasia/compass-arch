@@ -8,9 +8,12 @@ Run: uv run python analysis/make_figures.py
 import json
 import sqlite3
 from pathlib import Path
+from statistics import mean
 
 import matplotlib.pyplot as plt
 from pilot_115_analysis import categorize, load_tasks, t_high_sensitivity_points
+
+from eval.metrics import brier_score, ece
 
 ROOT = Path(__file__).parent.parent
 FIG_DIR = ROOT / "analysis" / "figures"
@@ -243,14 +246,103 @@ def fig_threshold(model: str) -> None:
     plt.close(fig)
 
 
+# Models with per-step Compass confidence to score calibration on; the shrink
+# variant is the strongest calibrator, shown last.
+CALIB_MODELS = [
+    ("gpt-4o-mini", "gpt-4o-mini"),
+    ("Qwen2.5 14B", "qwen2.5:14b"),
+    ("Qwen2.5 14B + shrinkage", "qwen2.5:14b-shrink"),
+]
+
+
+def calibration_rows() -> list[dict]:
+    """Per-model ECE + Brier for raw verbalized confidence vs Compass's
+    calibrated success_prob, reduced to one mean confidence per compass trial
+    paired with the binary trial outcome. Skips models absent from the DB."""
+    db = sqlite3.connect(ROOT / "results" / "trials.db")
+    rows = []
+    for label, model in CALIB_MODELS:
+        recs = db.execute(
+            "SELECT confidence_scores, success_probs, success FROM trials "
+            "WHERE task_id LIKE 'tau_retail%' AND model = ? AND condition = 'compass'",
+            (model,),
+        ).fetchall()
+        verb, calib, outs = [], [], []
+        for cs, sp, succ in recs:
+            cs, sp = json.loads(cs), json.loads(sp)
+            if not cs:
+                continue
+            verb.append(mean(cs))
+            calib.append(mean(sp))
+            outs.append(int(succ))
+        if not outs:
+            continue
+        rows.append({
+            "label": label,
+            "verbalized": {"ece": ece(verb, outs), "brier": brier_score(verb, outs)},
+            "calibrated": {"ece": ece(calib, outs), "brier": brier_score(calib, outs)},
+        })
+    return rows
+
+
+def fig_calibration() -> None:
+    """Two panels (ECE | Brier). Per model, raw verbalized confidence vs
+    Compass's calibrated success_prob. Lower is better - the gap is the honesty
+    Compass adds."""
+    data = calibration_rows()
+    if not data:
+        return
+    labels = [d["label"] for d in data]
+    metrics = [("ece", "Expected Calibration Error"), ("brier", "Brier score")]
+    series = [("Raw verbalized confidence", GRAY, "verbalized"),
+              ("Compass calibrated", BLUE, "calibrated")]
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.6))
+    ys = list(range(len(labels)))
+    h = 0.36
+    for ax, (key, mlabel) in zip(axes, metrics):
+        for si, (_lbl, color, skey) in enumerate(series):
+            offset = (si - 0.5) * h
+            bars = ax.barh([y + offset for y in ys],
+                           [d[skey][key] for d in data], height=h * 0.86, color=color)
+            for b in bars:
+                ax.annotate(f"{b.get_width():.2f}",
+                            (b.get_width(), b.get_y() + b.get_height() / 2),
+                            xytext=(4, 0), textcoords="offset points",
+                            va="center", fontsize=9, color=INK)
+        ax.set_yticks(ys, labels, fontsize=10, color=INK)
+        ax.set_xlim(0, 1.0)
+        ax.invert_yaxis()
+        ax.set_title(mlabel, fontsize=11, color=INK_2, loc="left")
+        ax.grid(axis="x", color=GRID, linewidth=0.8)
+        ax.set_axisbelow(True)
+        for spine in ("top", "right", "left"):
+            ax.spines[spine].set_visible(False)
+    axes[1].set_yticklabels([])
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c, _ in series]
+    fig.legend(handles, [s[0] for s in series], loc="lower center", ncol=2,
+               frameon=False, fontsize=10, bbox_to_anchor=(0.5, 0.02))
+    fig.suptitle("Compass makes an agent's confidence more honest (lower is better)",
+                 fontsize=14, fontweight="bold", x=0.01, y=0.98, ha="left", va="top")
+    fig.text(0.01, 0.9,
+             "Raw models are wildly overconfident: they report ~0.9-1.0 while succeeding "
+             "<15% of the time. One mean confidence per trial vs the trial outcome, "
+             "115 τ-bench retail tasks.",
+             fontsize=9, color=INK_2, va="top")
+    fig.tight_layout(rect=(0, 0.08, 1, 0.86))
+    fig.savefig(FIG_DIR / "calibration.png", dpi=200)
+    plt.close(fig)
+
+
 def main() -> None:
     FIG_DIR.mkdir(exist_ok=True)
     models = models_in_db()
     fig_headline(models)
     fig_categories(models[0])
     fig_threshold(models[0])
+    fig_calibration()
     print(f"figures written to {FIG_DIR.relative_to(ROOT)}: "
-          "headline_metrics.png, outcome_categories.png, threshold_sensitivity.png")
+          "headline_metrics.png, outcome_categories.png, threshold_sensitivity.png, "
+          "calibration.png")
 
 
 if __name__ == "__main__":

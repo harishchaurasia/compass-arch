@@ -71,6 +71,13 @@ either way, the agent abstains and asks for help more often. "Zero" means zero *
 tasks*, not a proof of perfection. The open question ([FINDINGS.md](FINDINGS.md)) is recovering
 that lost coverage with an *earlier* honest signal.
 
+**Is the confidence itself more honest?** Yes - that's the mechanism behind the numbers
+above. Raw verbalized confidence is badly miscalibrated (gpt-4o-mini reports ~0.92 while
+succeeding ~10% of the time; Qwen ~0.97 at ~9%). Compass's calibrated success probability
+lowers Expected Calibration Error on every model, and the shrinkage variant most of all
+(ECE 0.89 -> 0.64, Brier 0.86 -> 0.48). Details and the reliability caveat in
+[FINDINGS.md](FINDINGS.md#5-calibration-is-the-confidence-itself-more-honest).
+
 ## Reproduce
 
 ```bash

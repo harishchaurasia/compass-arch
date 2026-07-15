@@ -87,6 +87,32 @@ Shrinkage eliminated every destructive-action compound failure, at a cost of
 ~16pp more abstention and ~3pp selective success, a clean safety/coverage
 tradeoff.
 
+## 5. Calibration: is the confidence itself more honest?
+
+Compound-failure rate measures *behaviour*. The prior question is whether the
+confidence Compass acts on actually tracks outcomes. We score one mean confidence
+per compass trial against the binary trial outcome (`success`), for two signals:
+the model's **raw verbalized confidence** and Compass's **calibrated success_prob**.
+
+| Model | ECE raw -> calibrated | Brier raw -> calibrated |
+|---|---|---|
+| gpt-4o-mini | 0.81 -> 0.74 | 0.76 -> 0.65 |
+| qwen2.5:14b (baseline) | 0.88 -> 0.81 | 0.85 -> 0.74 |
+| qwen2.5:14b + shrinkage | 0.89 -> **0.64** | 0.86 -> **0.48** |
+
+Two things fall out. First, raw verbalized confidence is *badly* miscalibrated on
+every model: gpt-4o-mini reports ~0.92 while succeeding ~10% of the time, Qwen
+~0.97 while succeeding ~9%. That gap (ECE ~0.8-0.9) is the entire reason Compass
+exists. Second, the aggregator moves confidence in the right direction everywhere,
+and the base-rate shrinkage prior moves it the most (ECE 0.89 -> 0.64, Brier
+0.86 -> 0.48) because it attacks the overconfidence directly rather than waiting
+for trajectory penalties. See `analysis/figures/calibration.png`.
+
+Caveat: with success rates this low, most trials land in the top confidence bins,
+so ECE here is dominated by the raw overconfidence gap — it is a coarse honesty
+signal, not a fine-grained reliability diagram. It moves in the expected direction
+and by the expected ordering, which is what we claim.
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
