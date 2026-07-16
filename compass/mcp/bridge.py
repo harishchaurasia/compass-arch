@@ -48,11 +48,18 @@ def _text(result: Any) -> str:
 class MCPToolServer:
     """Owns a background event loop + one persistent session to an MCP server."""
 
-    def __init__(self, command: str, args: list[str], server_name: str = "fs"):
+    def __init__(
+        self,
+        command: str,
+        args: list[str],
+        server_name: str = "fs",
+        env: dict[str, str] | None = None,
+    ):
         self._name = server_name
-        self._client = MultiServerMCPClient(
-            {server_name: {"command": command, "args": args, "transport": "stdio"}}
-        )
+        conn = {"command": command, "args": args, "transport": "stdio"}
+        if env:  # e.g. a token for the GitHub MCP server
+            conn["env"] = env
+        self._client = MultiServerMCPClient({server_name: conn})
         self._raw: list[BaseTool] = []
         self._queue: asyncio.Queue = None  # type: ignore[assignment]
         self._ready = threading.Event()

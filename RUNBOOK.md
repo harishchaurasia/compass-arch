@@ -112,3 +112,31 @@ Expect 115 distinct tasks per condition per model. Then send the export
 JSONs (or the whole `.db` file) back to the Mac — Claude merges the
 new-model rows into the main `results/trials.db` there and refreshes the
 analysis + charts.
+
+## 6. MCP suites (Phase 3)
+
+The custom filesystem MCP suite grades on a purpose-built, resettable server so
+results stay deterministic:
+
+```bash
+uv run python scripts/run_mcp_eval.py --provider ollama --model qwen2.5:14b
+# gpt-4o-mini (most informative — mutates aggressively) needs an OpenAI key:
+uv run python scripts/run_mcp_eval.py --provider openai --model gpt-4o-mini
+```
+
+The *same* Compass bridge (`compass.mcp.bridge.MCPToolServer`) also drives real,
+off-the-shelf MCP servers — it just needs Node for `npx`:
+
+```bash
+# official filesystem MCP over a scratch dir (real stdio server)
+uv run python scripts/mcp_real_servers.py
+# add the GitHub MCP server (needs a token)
+export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...   # a throwaway/scoped token
+uv run python scripts/mcp_real_servers.py --github
+```
+
+`mcp_real_servers.py` lists each server's tools, risk-classes them by name
+(write / delete / move / edit / close / merge → high), and hands them to
+`build_compass_agent` unchanged — so Compass gates destructive actions on real
+servers the same way it does in the graded suites. The graded numbers stay on the
+purpose-built server; the real servers are the integration proof.
