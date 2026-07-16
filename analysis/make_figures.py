@@ -362,6 +362,73 @@ def fig_calibration() -> None:
     plt.close(fig)
 
 
+def mcp_models() -> list[str]:
+    """Models with a full vanilla+compass run on the custom MCP fs suite."""
+    db = sqlite3.connect(ROOT / "results" / "trials.db")
+    counts: dict[str, dict[str, int]] = {}
+    for model, cond, n in db.execute(
+        "SELECT model, condition, COUNT(*) FROM trials "
+        "WHERE task_id LIKE 'mcp_fs%' GROUP BY model, condition"
+    ):
+        counts.setdefault(model, {})[cond] = n
+    return sorted(m for m, c in counts.items() if c.get("vanilla") and c.get("compass"))
+
+
+def _mcp_metrics(model: str, cond: str) -> dict:
+    db = sqlite3.connect(ROOT / "results" / "trials.db")
+    rows = db.execute(
+        "SELECT success, abstained, mutated_order_ids FROM trials "
+        "WHERE task_id LIKE 'mcp_fs%' AND model = ? AND condition = ?",
+        (model, cond),
+    ).fetchall()
+    n = len(rows)
+    destroyed = sum(bool(json.loads(m)) and not s for s, _, m in rows)
+    return {"n": n, "compound": destroyed / n, "destroyed": destroyed}
+
+
+def fig_mcp() -> None:
+    """Compound-failure rate (the safety headline) on the custom MCP filesystem
+    suite, vanilla vs Compass, per local model. Small n=12, so directional."""
+    models = mcp_models()
+    if not models:
+        return
+    labels = {"qwen2.5:14b": "Qwen2.5 14B", "qwen2.5:7b": "Qwen2.5 7B",
+              "llama3.1:8b": "Llama 3.1 8B", "gpt-4o-mini": "gpt-4o-mini"}
+    ys = list(range(len(models)))
+    h = 0.38
+    fig, ax = plt.subplots(figsize=(8.6, 0.9 * len(models) + 2.4))
+    for si, (cond, color, lbl) in enumerate(
+        [("vanilla", GRAY, "Vanilla ReAct"), ("compass", BLUE, "Compass")]
+    ):
+        offset = (si - 0.5) * h
+        vals = [_mcp_metrics(m, cond) for m in models]
+        bars = ax.barh([y + offset for y in ys], [v["compound"] for v in vals],
+                       height=h * 0.86, color=color, label=lbl)
+        for b, v in zip(bars, vals):
+            txt = f"{b.get_width():.0%}" + (f"  ({v['destroyed']} destroyed)" if v["destroyed"] else "")
+            ax.annotate(txt, (b.get_width(), b.get_y() + b.get_height() / 2),
+                        xytext=(5, 0), textcoords="offset points", va="center",
+                        fontsize=9.5, color=INK)
+    ax.set_yticks(ys, [labels.get(m, m) for m in models], fontsize=10, color=INK)
+    ax.set_xlim(0, 0.30)
+    ax.invert_yaxis()
+    ax.xaxis.set_major_formatter(lambda v, _: f"{v:.0%}")
+    ax.grid(axis="x", color=GRID, linewidth=0.8)
+    ax.set_axisbelow(True)
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.legend(loc="lower right", frameon=False, fontsize=9.5)
+    ax.set_title("Cross-domain check: destructive failures on a real MCP filesystem server",
+                 fontsize=13, fontweight="bold", loc="left", pad=14)
+    fig.text(0.01, 0.03,
+             "12 cascading-failure tasks over a purpose-built filesystem MCP server (stdio).\n"
+             "Zero on both Qwens; on Llama 3.1 8B one still slips through. Small n - directional.",
+             fontsize=8.5, color=MUTED, va="bottom")
+    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    fig.savefig(FIG_DIR / "mcp_compound_failures.png", dpi=200)
+    plt.close(fig)
+
+
 def main() -> None:
     FIG_DIR.mkdir(exist_ok=True)
     models = models_in_db()
@@ -369,9 +436,10 @@ def main() -> None:
     fig_categories(models[0])
     fig_threshold(models[0])
     fig_calibration()
+    fig_mcp()
     print(f"figures written to {FIG_DIR.relative_to(ROOT)}: "
           "headline_metrics.png, outcome_categories.png, threshold_sensitivity.png, "
-          "calibration.png")
+          "calibration.png, mcp_compound_failures.png")
 
 
 if __name__ == "__main__":

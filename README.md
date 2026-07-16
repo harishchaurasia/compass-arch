@@ -81,6 +81,19 @@ Calibration Error on every model, and the shrinkage variant most of all (e.g. Qw
 ECE 0.89 → 0.64, Brier 0.86 → 0.48). Details, the full ECE/Brier table, and the reliability
 caveat in [FINDINGS.md](FINDINGS.md#5-calibration-is-the-confidence-itself-more-honest).
 
+### Cross-domain check: a real MCP filesystem server
+
+The finding isn't tied to one benchmark. A second suite runs on a purpose-built
+**filesystem MCP server** (real JSON-RPC over stdio) with 12 cascading-failure tasks -
+decoy files bait an early misidentification that destroys the *wrong* file.
+
+![MCP cross-domain](analysis/figures/mcp_compound_failures.png)
+
+Compass drives destructive failures to **0%** on both Qwen models here too (Qwen2.5 7B:
+16.7% → 0%). Llama 3.1 8B is the honest exception - it abstains heavily but one action
+still slips through. Small suite (n=12), so directional; the aggressive `gpt-4o-mini` run
+is a one-command follow-up (`run_mcp_eval.py --provider openai --model gpt-4o-mini`).
+
 ## Reproduce
 
 ```bash
@@ -92,6 +105,8 @@ uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b
 # shrinkage variant (Phase 4)
 uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b \
   --calibration shrinkage --conditions compass
+# cross-domain: custom filesystem MCP suite
+uv run python scripts/run_mcp_eval.py --provider ollama --model qwen2.5:14b
 ```
 
 Local-GPU / Windows runners and troubleshooting live in [RUNBOOK.md](RUNBOOK.md).
@@ -104,8 +119,10 @@ Heading toward production, built in the open - not there yet.
 - ✅ Full 115-task A/B on **gpt-4o-mini**: compound failures 54.8% -> 18.3%
 - ✅ Full 115-task A/B across three local models (**Qwen2.5 7B / 14B**, **Llama 3.1 8B**);
   the shrinkage variant drives destructive failures to **0%** on all three
+- ✅ Custom **filesystem MCP** suite (real stdio server, 12 cascading-failure tasks); the
+  finding reproduces cross-domain
+- 🔜 `gpt-4o-mini` on the MCP suite (needs an OpenAI key) + more real MCP servers (GitHub)
 - 🔜 Recover the coverage that caution costs (an earlier, honest pre-action signal)
-- 🔜 Custom MCP task suite with deliberate cascading-failure potential (Phase 3)
 
 Contributions and PRs welcome - if agent reliability is your world, let's connect.
 

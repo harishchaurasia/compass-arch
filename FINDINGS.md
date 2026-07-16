@@ -128,6 +128,32 @@ so ECE here is dominated by the raw overconfidence gap — it is a coarse honest
 signal, not a fine-grained reliability diagram. It moves in the expected direction
 and by the expected ordering, which is what we claim.
 
+## 6. Cross-domain: the same result on a real MCP filesystem server
+
+Everything above is τ-bench retail. To check the finding isn't an artefact of one
+benchmark, Phase 3 adds a second domain on a completely different substrate: a
+purpose-built **filesystem MCP server** (real JSON-RPC over stdio) with a
+config-store world seeded with decoy files, and 12 cascading-failure tasks where
+an early misidentification leads to destroying the *wrong* file (delete the live
+config instead of its `.bak`, clobber the wrong service, etc). Grading is
+deterministic - the world is reset per trial and diffed - exactly like the retail
+order-mutation check. `mutated_order_ids` here holds filesystem paths.
+
+| Model (MCP fs suite, n=12) | Vanilla compound | Compass compound |
+|---|---|---|
+| qwen2.5:7b | 16.7% (2 destroyed) | **0.0%** |
+| qwen2.5:14b | 8.3% (1 destroyed) | **0.0%** |
+| llama3.1:8b | 8.3% (1 destroyed) | 8.3% (1 destroyed) |
+
+On both Qwens, Compass drives destructive failures to zero on this suite too, by
+abstaining on the ambiguous destructive calls - the retail result reproduces on a
+different domain and a real MCP transport. Llama 3.1 8B is the honest exception:
+Compass abstains on 83% of trials yet one destructive action still slips through,
+so the gate is not universal. n=12 is small, so these are directional. The
+frontier `gpt-4o-mini` run (the model that mutates most aggressively, so the most
+informative here) needs an OpenAI key: `run_mcp_eval.py --provider openai
+--model gpt-4o-mini`.
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -160,4 +186,6 @@ uv run python scripts/run_tau_eval.py --provider openai --model gpt-4o-mini
 # weak-model shrinkage variant
 uv run python scripts/run_tau_eval.py --provider ollama \
   --model qwen2.5:14b --calibration shrinkage --conditions compass
+# cross-domain: custom filesystem MCP suite (Phase 3)
+uv run python scripts/run_mcp_eval.py --provider ollama --model qwen2.5:14b
 ```
