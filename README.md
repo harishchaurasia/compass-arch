@@ -44,49 +44,50 @@ CompassStep (reasoning · action · confidence · risk)
 
 ## Results (115 τ-bench retail tasks · single-shot)
 
-Two models, same suite. Compound failure = the agent took a destructive, irreversible action
-while wrong (mutated a real order it shouldn't have).
+**Four models, one suite.** Compound failure = the agent took a destructive, irreversible action
+while wrong (mutated a real order it shouldn't have). *Shrinkage* is an opt-in variant that
+discounts an unearned "100%" toward a base rate *before* the agent acts.
 
-**gpt-4o-mini (frontier model).** Plain ReAct is dangerous here: it mutates the wrong order on
-95 of 115 tasks. Compass cuts that by roughly two thirds, out of the box.
+![Headline results](analysis/figures/headline_metrics.png)
 
-| Metric | Vanilla | Compass |
-|---|---|---|
-| Selective success | 33.0% | 15.6% |
-| Abstention rate | 0.0% | 60.9% |
-| **Destructive compound failures** | 54.8% | **18.3%** |
-| Trials that mutated a real order | 95 | **24** |
+**Destructive compound failures (lower is better), and the trials that mutated a real order:**
 
-**Qwen2.5 14B (weak, overconfident model).** Verbalized confidence is a flat, useless ~1.0 here,
-the hardest case for a calibration layer. Baseline Compass is blind to the *first* high-risk
-action (no trajectory signal has accumulated yet), so it actually makes things worse. The
-shrinkage variant, which discounts an unearned "100%" before the agent acts, closes the gap.
-
-| Metric | Vanilla | Compass | Compass + shrinkage |
+| Model | Vanilla | Compass | Compass + shrinkage |
 |---|---|---|---|
-| Selective success | 6.1% | 10.6% | 7.6% |
-| Abstention rate | 0.0% | 26.1% | 42.6% |
-| **Destructive compound failures** | 6.1% | 18.3% | **0.0%** |
-| Trials that mutated a real order | 7 | 24 | **0** |
+| gpt-4o-mini *(frontier)* | 54.8% (95) | **18.3%** (24) | — |
+| Qwen2.5 14B | 6.1% (7) | 18.3% (24) | **0.0%** (0) |
+| Qwen2.5 7B | 12.2% (14) | 12.2% (16) | **0.0%** (0) |
+| Llama 3.1 8B | 1.7% (2) | 0.9% (1) | **0.0%** (0) |
 
-**The cross-model finding:** calibration works when the model's confidence carries signal
-(gpt-4o-mini), and needs an extra base-rate prior when it doesn't (Qwen). Safety costs coverage
-either way, the agent abstains and asks for help more often. "Zero" means zero *on these 115
-tasks*, not a proof of perfection. The open question ([FINDINGS.md](FINDINGS.md)) is recovering
-that lost coverage with an *earlier* honest signal.
+**The cross-model finding:** what Compass needs depends on the model's *failure mode*.
+- **gpt-4o-mini** carries real signal in its confidence, so baseline Compass cuts compound
+  failures by two thirds out of the box (54.8% → 18.3%).
+- **The Qwens are overconfident** — verbalized confidence is a flat ~1.0, so baseline Compass is
+  blind to the *first* high-risk action and can even make things worse (14B: 6.1% → 18.3%). The
+  base-rate prior restores the gate and drives destructive failures to **zero** on both the 7B
+  and the 14B — the fix generalizes across model sizes.
+- **Llama 3.1 8B is timid**: it rarely takes a destructive action at all (1.7%), so there is
+  little to gate; shrinkage still cleans up the last one.
 
-**Is the confidence itself more honest?** Yes - that's the mechanism behind the numbers
-above. Raw verbalized confidence is badly miscalibrated (gpt-4o-mini reports ~0.92 while
-succeeding ~10% of the time; Qwen ~0.97 at ~9%). Compass's calibrated success probability
-lowers Expected Calibration Error on every model, and the shrinkage variant most of all
-(ECE 0.89 -> 0.64, Brier 0.86 -> 0.48). Details and the reliability caveat in
-[FINDINGS.md](FINDINGS.md#5-calibration-is-the-confidence-itself-more-honest).
+The cost is coverage — the agent abstains and asks for help more often (e.g. Qwen2.5 7B
+abstention rises to 45% under shrinkage), and selective task success dips a few points. "Zero"
+means zero *on these 115 tasks*, not a proof of perfection. The open question
+([FINDINGS.md](FINDINGS.md)) is recovering that lost coverage with an *earlier* honest signal.
+
+**Is the confidence itself more honest?** Yes - that's the mechanism behind the numbers above.
+Raw verbalized confidence is badly miscalibrated everywhere (models report ~0.9-1.0 while
+succeeding <15% of the time). Compass's calibrated success probability lowers Expected
+Calibration Error on every model, and the shrinkage variant most of all (e.g. Qwen2.5 14B
+ECE 0.89 → 0.64, Brier 0.86 → 0.48). Details, the full ECE/Brier table, and the reliability
+caveat in [FINDINGS.md](FINDINGS.md#5-calibration-is-the-confidence-itself-more-honest).
 
 ## Reproduce
 
 ```bash
 uv sync
-# baseline (locked aggregator)
+# frontier baseline
+uv run python scripts/run_tau_eval.py --provider openai --model gpt-4o-mini
+# local baseline (locked aggregator) — swap in qwen2.5:7b / llama3.1:8b
 uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b
 # shrinkage variant (Phase 4)
 uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b \
@@ -101,9 +102,10 @@ Heading toward production, built in the open - not there yet.
 
 - ✅ End-to-end calibrated agent + locked rule-based aggregator
 - ✅ Full 115-task A/B on **gpt-4o-mini**: compound failures 54.8% -> 18.3%
-- ✅ Full 115-task A/B on **Qwen2.5 14B**; shrinkage variant gates the first destructive action
-- 🔜 Extend the benchmark to more open-source local models: **Qwen2.5 7B**, **Llama 3.1 8B**
+- ✅ Full 115-task A/B across three local models (**Qwen2.5 7B / 14B**, **Llama 3.1 8B**);
+  the shrinkage variant drives destructive failures to **0%** on all three
 - 🔜 Recover the coverage that caution costs (an earlier, honest pre-action signal)
+- 🔜 Custom MCP task suite with deliberate cascading-failure potential (Phase 3)
 
 Contributions and PRs welcome - if agent reliability is your world, let's connect.
 

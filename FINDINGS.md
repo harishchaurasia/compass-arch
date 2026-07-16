@@ -1,12 +1,26 @@
-# Findings - Compass across two models (τ-bench retail)
+# Findings - Compass across four models (τ-bench retail)
 
 A `find → diagnose → intervene → measure` arc. All numbers are the τ-bench retail
-single-shot suite (115 tasks), temperature 0. Two models tell a cross-model story:
-a frontier model where verbalized confidence carries signal (`gpt-4o-mini`), and a
-weak, overconfident local model where it does not (`qwen2.5:14b` via Ollama).
+single-shot suite (115 tasks), temperature 0, across four models: a frontier model
+(`gpt-4o-mini`) and three local models via Ollama (`qwen2.5:7b`, `qwen2.5:14b`,
+`llama3.1:8b`).
 
 Compound failure here means the agent took a destructive, irreversible action while
 wrong (mutated a real order it should not have).
+
+## Cross-model summary
+
+| Model | Compound failure: Vanilla → Compass → +Shrinkage | Failure mode |
+|---|---|---|
+| gpt-4o-mini *(frontier)* | 54.8% → **18.3%** → (n/a) | confidence carries signal; baseline suffices |
+| qwen2.5:14b | 6.1% → 18.3% → **0.0%** | overconfident; baseline blind to first action |
+| qwen2.5:7b | 12.2% → 12.2% → **0.0%** | overconfident; same pattern as 14B |
+| llama3.1:8b | 1.7% → 0.9% → **0.0%** | timid; rarely acts destructively |
+
+The rest of this document is the arc that produced these numbers: the frontier baseline,
+then the qwen2.5:14b deep-dive that diagnoses *why* an overconfident model breaks the gate
+and how the base-rate prior fixes it - a fix that then reproduces on qwen2.5:7b and
+llama3.1:8b (all three local models reach 0% under shrinkage).
 
 ## 0. Frontier baseline: on gpt-4o-mini, Compass works out of the box
 
@@ -94,19 +108,20 @@ confidence Compass acts on actually tracks outcomes. We score one mean confidenc
 per compass trial against the binary trial outcome (`success`), for two signals:
 the model's **raw verbalized confidence** and Compass's **calibrated success_prob**.
 
-| Model | ECE raw -> calibrated | Brier raw -> calibrated |
-|---|---|---|
-| gpt-4o-mini | 0.81 -> 0.74 | 0.76 -> 0.65 |
-| qwen2.5:14b (baseline) | 0.88 -> 0.81 | 0.85 -> 0.74 |
-| qwen2.5:14b + shrinkage | 0.89 -> **0.64** | 0.86 -> **0.48** |
+| Model | ECE raw -> calibrated | Brier raw -> calibrated | + shrinkage ECE / Brier |
+|---|---|---|---|
+| gpt-4o-mini | 0.81 -> 0.74 | 0.76 -> 0.65 | (n/a) |
+| qwen2.5:7b | 0.92 -> 0.90 | 0.91 -> 0.87 | **0.67** / **0.51** |
+| qwen2.5:14b | 0.88 -> 0.81 | 0.85 -> 0.74 | **0.64** / **0.48** |
+| llama3.1:8b | 0.88 -> 0.78 | 0.84 -> 0.70 | **0.63** / **0.46** |
 
 Two things fall out. First, raw verbalized confidence is *badly* miscalibrated on
-every model: gpt-4o-mini reports ~0.92 while succeeding ~10% of the time, Qwen
-~0.97 while succeeding ~9%. That gap (ECE ~0.8-0.9) is the entire reason Compass
-exists. Second, the aggregator moves confidence in the right direction everywhere,
-and the base-rate shrinkage prior moves it the most (ECE 0.89 -> 0.64, Brier
-0.86 -> 0.48) because it attacks the overconfidence directly rather than waiting
-for trajectory penalties. See `analysis/figures/calibration.png`.
+every model: they report ~0.9-1.0 while succeeding <15% of the time. That gap
+(ECE ~0.8-0.9) is the entire reason Compass exists. Second, the aggregator moves
+confidence in the right direction everywhere, and the base-rate shrinkage prior
+moves it the most (down to ECE ~0.63-0.67 on all three local models) because it
+attacks the overconfidence directly rather than waiting for trajectory penalties.
+See `analysis/figures/calibration.png`.
 
 Caveat: with success rates this low, most trials land in the top confidence bins,
 so ECE here is dominated by the raw overconfidence gap — it is a coarse honesty
@@ -116,16 +131,20 @@ and by the expected ordering, which is what we claim.
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
-aggregator handing it *honest* success probabilities. The two models bracket the
-regime:
+aggregator handing it *honest* success probabilities. What it needs depends on the
+model's failure mode, and the four models span the range:
 
 - **When confidence carries signal** (gpt-4o-mini), baseline Compass already cuts
   compound failures by two thirds, no variant needed.
-- **When it collapses to a constant** (qwen2.5:14b), the only real early signal is
-  gone, trajectory features arrive too late to gate the first destructive action,
-  and a cheap base-rate prior on verbalized confidence closes the gap.
+- **When it collapses to a constant** (qwen2.5:7b and 14B), the only real early
+  signal is gone, trajectory features arrive too late to gate the first destructive
+  action, and a cheap base-rate prior on verbalized confidence closes the gap - the
+  same fix drives both models to 0% compound failures, so it is not a per-model
+  tuning artefact.
+- **When the model is already timid** (llama3.1:8b), it rarely takes a destructive
+  action at all, so there is little to gate; shrinkage still cleans up the last one.
 
-Safety costs coverage in both regimes: the agent abstains and asks for help more
+Safety costs coverage in every regime: the agent abstains and asks for help more
 often. "Zero" means zero on these 115 tasks, not a proof of perfection. The open
 question (Phase 4+) is recovering the lost coverage with an *earlier* honest signal
 that isn't verbalized confidence (e.g. precondition checks in the trajectory before

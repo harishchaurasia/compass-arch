@@ -86,9 +86,11 @@ def _bar_label(ax, bars, color=INK):
                     va="center", ha="left", fontsize=10, color=color)
 
 
-def cond_metrics(model: str, cond: str) -> dict:
+def cond_metrics(model: str, cond: str) -> dict | None:
     """success / abstention / wrong-mutation rates for one model+condition,
-    read straight from the tau_retail rows (works for compass-only variants)."""
+    read straight from the tau_retail rows (works for compass-only variants).
+    Returns None when the model+condition has no rows yet, so a not-yet-run
+    variant simply drops out of the chart instead of crashing it."""
     db = sqlite3.connect(ROOT / "results" / "trials.db")
     rows = db.execute(
         "SELECT success, abstained, mutated_order_ids FROM trials "
@@ -96,6 +98,8 @@ def cond_metrics(model: str, cond: str) -> dict:
         (model, cond),
     ).fetchall()
     n = len(rows)
+    if n == 0:
+        return None
     return {
         "success": sum(bool(s) for s, _, _ in rows) / n,
         "abstained": sum(bool(a) for _, a, _ in rows) / n,
@@ -104,7 +108,12 @@ def cond_metrics(model: str, cond: str) -> dict:
 
 
 # A calibration variant to overlay on its base model's panel (model -> variant).
-SHRINK_OF = {"qwen2.5:14b": "qwen2.5:14b-shrink"}
+# Every overconfident local model gets a shrinkage run; gpt-4o-mini doesn't need one.
+SHRINK_OF = {
+    "qwen2.5:14b": "qwen2.5:14b-shrink",
+    "qwen2.5:7b": "qwen2.5:7b-shrink",
+    "llama3.1:8b": "llama3.1:8b-shrink",
+}
 
 # fixed series styling; the shrinkage bar only appears where SHRINK_OF has data
 SERIES = [
@@ -116,16 +125,20 @@ SERIES = [
 
 
 def fig_headline(models: list[str]) -> None:
-    """Grouped horizontal bars per model. Vanilla vs Compass everywhere; the
-    base-rate-prior (shrinkage) variant is overlaid only where it was run."""
+    """Grouped horizontal bars per model, laid out on a grid. Vanilla vs Compass
+    everywhere; the base-rate-prior (shrinkage) variant is overlaid only where it
+    was run."""
     metric_labels = [("success", "Task success"),
                      ("compound", "Compound failure\n(destructive action while wrong)"),
                      ("abstained", "Abstention")]
     panels = {m: [(lbl, col, fn(m)) for lbl, col, fn in SERIES if fn(m) is not None]
               for m in models}
+    ncols = 1 if len(models) == 1 else 2
+    nrows = (len(models) + ncols - 1) // ncols
     fig, axes = plt.subplots(
-        1, len(models), figsize=(6.4 * len(models), 5.4), squeeze=False)
-    for ax, model in zip(axes[0], models):
+        nrows, ncols, figsize=(6.6 * ncols, 3.0 * nrows + 1.6), squeeze=False)
+    flat = [ax for row in axes for ax in row]
+    for ax, model in zip(flat, models):
         series = panels[model]
         nser = len(series)
         ys = list(range(len(metric_labels)))
@@ -137,28 +150,29 @@ def fig_headline(models: list[str]) -> None:
                            [mets[k] for k, _ in metric_labels],
                            height=h * 0.86, color=color)
             _bar_label(ax, bars, INK)
-        ax.set_yticks(ys, [lbl for _, lbl in metric_labels], fontsize=10, color=INK)
+        ax.set_yticks(ys, [lbl for _, lbl in metric_labels], fontsize=9.5, color=INK)
         ax.set_xlim(0, 1.06)
         ax.invert_yaxis()
         ax.set_title(model, fontsize=12, color=INK_2, loc="left")
         ax.xaxis.set_major_formatter(lambda v, _: f"{v:.0%}")
+        ax.tick_params(axis="x", labelsize=9)
         ax.grid(axis="x", color=GRID, linewidth=0.8)
         ax.set_axisbelow(True)
         for spine in ("top", "right", "left"):
             ax.spines[spine].set_visible(False)
+    for ax in flat[len(models):]:  # hide any unused grid cell
+        ax.set_visible(False)
     handles = [plt.Rectangle((0, 0), 1, 1, color=col) for _, col, _ in SERIES]
     fig.legend(handles, [lbl for lbl, _, _ in SERIES], loc="lower center",
-               ncol=3, frameon=False, fontsize=10, bbox_to_anchor=(0.5, 0.035))
+               ncol=3, frameon=False, fontsize=10, bbox_to_anchor=(0.5, 0.01))
     fig.suptitle("Compass trades some task success for far fewer destructive failures",
-                 fontsize=14, fontweight="bold", x=0.01, y=0.98, ha="left", va="top")
-    fig.text(0.01, 0.9, "115 τ-bench retail tasks (single-shot), per model",
-             fontsize=10, color=INK_2, va="top")
-    fig.text(0.5, 0.125,
-             "On Qwen2.5 14B the model's confidence is flat and uninformative, so baseline "
-             "Compass can't gate the first risky action. The base-rate-prior (shrinkage) "
-             "variant drives destructive failures to zero.",
-             fontsize=8.5, color=MUTED, ha="center", va="center", wrap=True)
-    fig.tight_layout(rect=(0, 0.17, 1, 0.85))
+                 fontsize=14, fontweight="bold", x=0.01, y=0.995, ha="left", va="top")
+    fig.text(0.01, 0.955,
+             "115 τ-bench retail tasks (single-shot), per model. Where a model's confidence "
+             "is flat and overconfident, baseline Compass can't gate the first risky action; "
+             "the base-rate-prior (shrinkage) variant recovers the gate.",
+             fontsize=8.5, color=INK_2, va="top")
+    fig.tight_layout(rect=(0, 0.05, 1, 0.93))
     fig.savefig(FIG_DIR / "headline_metrics.png", dpi=200)
     plt.close(fig)
 
@@ -246,69 +260,84 @@ def fig_threshold(model: str) -> None:
     plt.close(fig)
 
 
-# Models with per-step Compass confidence to score calibration on; the shrink
-# variant is the strongest calibrator, shown last.
+# Base models to score calibration on (friendly label -> model id). The shrink
+# variant, where present (SHRINK_OF), is drawn as a third bar on the same row.
 CALIB_MODELS = [
     ("gpt-4o-mini", "gpt-4o-mini"),
+    ("Qwen2.5 7B", "qwen2.5:7b"),
     ("Qwen2.5 14B", "qwen2.5:14b"),
-    ("Qwen2.5 14B + shrinkage", "qwen2.5:14b-shrink"),
+    ("Llama 3.1 8B", "llama3.1:8b"),
 ]
 
 
-def calibration_rows() -> list[dict]:
-    """Per-model ECE + Brier for raw verbalized confidence vs Compass's
-    calibrated success_prob, reduced to one mean confidence per compass trial
-    paired with the binary trial outcome. Skips models absent from the DB."""
+def _calib_scores(model: str, col: str) -> tuple[float, float] | None:
+    """(ECE, Brier) for one model's compass rows, reducing `col` to one mean
+    confidence per trial paired with that run's own binary outcome."""
     db = sqlite3.connect(ROOT / "results" / "trials.db")
+    recs = db.execute(
+        f"SELECT {col}, success FROM trials "
+        "WHERE task_id LIKE 'tau_retail%' AND model = ? AND condition = 'compass'",
+        (model,),
+    ).fetchall()
+    conf, outs = [], []
+    for c, succ in recs:
+        c = json.loads(c)
+        if not c:
+            continue
+        conf.append(mean(c))
+        outs.append(int(succ))
+    if not outs:
+        return None
+    return ece(conf, outs), brier_score(conf, outs)
+
+
+def calibration_rows() -> list[dict]:
+    """Per base model: raw verbalized confidence, Compass's calibrated
+    success_prob, and (where a shrinkage run exists) the shrinkage-calibrated
+    success_prob. Skips models absent from the DB."""
     rows = []
     for label, model in CALIB_MODELS:
-        recs = db.execute(
-            "SELECT confidence_scores, success_probs, success FROM trials "
-            "WHERE task_id LIKE 'tau_retail%' AND model = ? AND condition = 'compass'",
-            (model,),
-        ).fetchall()
-        verb, calib, outs = [], [], []
-        for cs, sp, succ in recs:
-            cs, sp = json.loads(cs), json.loads(sp)
-            if not cs:
-                continue
-            verb.append(mean(cs))
-            calib.append(mean(sp))
-            outs.append(int(succ))
-        if not outs:
+        verb = _calib_scores(model, "confidence_scores")
+        calib = _calib_scores(model, "success_probs")
+        if verb is None or calib is None:
             continue
-        rows.append({
-            "label": label,
-            "verbalized": {"ece": ece(verb, outs), "brier": brier_score(verb, outs)},
-            "calibrated": {"ece": ece(calib, outs), "brier": brier_score(calib, outs)},
-        })
+        entry = {"label": label,
+                 "verbalized": {"ece": verb[0], "brier": verb[1]},
+                 "calibrated": {"ece": calib[0], "brier": calib[1]}}
+        shrink_model = SHRINK_OF.get(model)
+        shrink = _calib_scores(shrink_model, "success_probs") if shrink_model else None
+        if shrink is not None:
+            entry["shrink"] = {"ece": shrink[0], "brier": shrink[1]}
+        rows.append(entry)
     return rows
 
 
 def fig_calibration() -> None:
-    """Two panels (ECE | Brier). Per model, raw verbalized confidence vs
-    Compass's calibrated success_prob. Lower is better - the gap is the honesty
-    Compass adds."""
+    """Two panels (ECE | Brier). Per model: raw verbalized confidence vs Compass's
+    calibrated success_prob vs the shrinkage variant. Lower is better - the gap is
+    the honesty Compass adds."""
     data = calibration_rows()
     if not data:
         return
     labels = [d["label"] for d in data]
     metrics = [("ece", "Expected Calibration Error"), ("brier", "Brier score")]
     series = [("Raw verbalized confidence", GRAY, "verbalized"),
-              ("Compass calibrated", BLUE, "calibrated")]
-    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.6))
+              ("Compass calibrated", BLUE, "calibrated"),
+              ("Compass + shrinkage", AQUA, "shrink")]
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0))
     ys = list(range(len(labels)))
-    h = 0.36
     for ax, (key, mlabel) in zip(axes, metrics):
-        for si, (_lbl, color, skey) in enumerate(series):
-            offset = (si - 0.5) * h
-            bars = ax.barh([y + offset for y in ys],
-                           [d[skey][key] for d in data], height=h * 0.86, color=color)
-            for b in bars:
+        for i, d in enumerate(data):
+            present = [s for s in series if s[2] in d]
+            nser = len(present)
+            h = 0.8 / nser
+            for si, (_lbl, color, skey) in enumerate(present):
+                offset = (si - (nser - 1) / 2) * h
+                b = ax.barh(ys[i] + offset, d[skey][key], height=h * 0.86, color=color)[0]
                 ax.annotate(f"{b.get_width():.2f}",
                             (b.get_width(), b.get_y() + b.get_height() / 2),
                             xytext=(4, 0), textcoords="offset points",
-                            va="center", fontsize=9, color=INK)
+                            va="center", fontsize=8.5, color=INK)
         ax.set_yticks(ys, labels, fontsize=10, color=INK)
         ax.set_xlim(0, 1.0)
         ax.invert_yaxis()
@@ -319,16 +348,16 @@ def fig_calibration() -> None:
             ax.spines[spine].set_visible(False)
     axes[1].set_yticklabels([])
     handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c, _ in series]
-    fig.legend(handles, [s[0] for s in series], loc="lower center", ncol=2,
-               frameon=False, fontsize=10, bbox_to_anchor=(0.5, 0.02))
+    fig.legend(handles, [s[0] for s in series], loc="lower center", ncol=3,
+               frameon=False, fontsize=10, bbox_to_anchor=(0.5, 0.01))
     fig.suptitle("Compass makes an agent's confidence more honest (lower is better)",
                  fontsize=14, fontweight="bold", x=0.01, y=0.98, ha="left", va="top")
-    fig.text(0.01, 0.9,
+    fig.text(0.01, 0.905,
              "Raw models are wildly overconfident: they report ~0.9-1.0 while succeeding "
              "<15% of the time. One mean confidence per trial vs the trial outcome, "
              "115 τ-bench retail tasks.",
              fontsize=9, color=INK_2, va="top")
-    fig.tight_layout(rect=(0, 0.08, 1, 0.86))
+    fig.tight_layout(rect=(0, 0.07, 1, 0.88))
     fig.savefig(FIG_DIR / "calibration.png", dpi=200)
     plt.close(fig)
 
