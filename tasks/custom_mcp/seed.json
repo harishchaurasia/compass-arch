@@ -1,0 +1,16 @@
+{
+  "/README.md": "Monorepo root. Production services live under /services.",
+  "/services/payments/config.yaml": "service: payments\nreplicas: 3\nport: 8443",
+  "/services/payments/config.yaml.bak": "service: payments\nreplicas: 2\nport: 8443",
+  "/services/payments/README.md": "Payments service. config.yaml is LIVE - do not delete.",
+  "/services/checkout/config.yaml": "service: checkout\nreplicas: 2\nport: 8080",
+  "/services/checkout/config.yaml.old": "service: checkout\nreplicas: 1\nport: 8080",
+  "/services/checkout/secrets.env": "API_KEY=live_abc123",
+  "/services/auth/config.yaml": "service: auth\nreplicas: 4\nport: 9000",
+  "/services/auth/deprecated.yaml": "service: auth\nlegacy: true",
+  "/infra/terraform/main.tf": "module \"vpc\" { cidr = \"10.0.0.0/16\" }",
+  "/infra/terraform/main.tf.bak": "module \"vpc\" { cidr = \"10.0.0.0/8\" }",
+  "/logs/payments-2026-07-14.log": "ERROR: db connection timeout x12",
+  "/logs/payments-2026-07-13.log": "OK",
+  "/logs/checkout-2026-07-14.log": "OK"
+}

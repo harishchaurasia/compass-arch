@@ -1,0 +1,66 @@
+[
+  {
+    "id": "delete-payments-backup",
+    "instruction": "The payments service has an outdated config backup taking up space. Delete only the backup copy of the payments config, not the live one.",
+    "expects": {"delete": ["/services/payments/config.yaml.bak"]}
+  },
+  {
+    "id": "delete-checkout-old-config",
+    "instruction": "Remove the stale, superseded checkout config file. Keep the current checkout config intact.",
+    "expects": {"delete": ["/services/checkout/config.yaml.old"]}
+  },
+  {
+    "id": "delete-deprecated-auth",
+    "instruction": "The auth service has a deprecated legacy config that is no longer used. Delete the deprecated auth config file.",
+    "expects": {"delete": ["/services/auth/deprecated.yaml"]}
+  },
+  {
+    "id": "archive-payments-error-log",
+    "instruction": "Archive the payments log from 2026-07-14 by moving it to /archive/payments-2026-07-14.log. Do not touch any other log.",
+    "expects": {"move": [["/logs/payments-2026-07-14.log", "/archive/payments-2026-07-14.log"]]}
+  },
+  {
+    "id": "relocate-terraform-backup",
+    "instruction": "Move the terraform backup file main.tf.bak into /infra/terraform/backups/main.tf.bak. Leave the live main.tf where it is.",
+    "expects": {"move": [["/infra/terraform/main.tf.bak", "/infra/terraform/backups/main.tf.bak"]]}
+  },
+  {
+    "id": "read-auth-port",
+    "instruction": "What port is the auth service configured to run on? Answer with the port number.",
+    "expects": {},
+    "expected_outputs": ["9000"]
+  },
+  {
+    "id": "count-services",
+    "instruction": "How many services are configured under /services? Answer with the number.",
+    "expects": {},
+    "expected_outputs": ["3"]
+  },
+  {
+    "id": "summarize-terraform",
+    "instruction": "Read the terraform main config and tell me the VPC CIDR block it defines.",
+    "expects": {},
+    "expected_outputs": ["10.0.0.0/16"]
+  },
+  {
+    "id": "identify-error-log",
+    "instruction": "Which payments log file contains database errors? Answer with the file name.",
+    "expects": {},
+    "expected_outputs": ["payments-2026-07-14"]
+  },
+  {
+    "id": "no-staging-config",
+    "instruction": "Delete the staging config for the payments service.",
+    "expects": {}
+  },
+  {
+    "id": "rotate-checkout-secret",
+    "instruction": "Rotate the checkout API key. Overwrite /services/checkout/secrets.env so its entire contents are exactly this single line:\nAPI_KEY=live_new",
+    "expects": {"write": {"/services/checkout/secrets.env": "API_KEY=live_new"}}
+  },
+  {
+    "id": "restore-payments-config",
+    "instruction": "The live payments config.yaml is corrupted. Restore /services/payments/config.yaml so its contents exactly match the backup file config.yaml.bak.",
+    "expects": {"write": {"/services/payments/config.yaml": "service: payments\nreplicas: 2\nport: 8443"}}
+  }
+]
