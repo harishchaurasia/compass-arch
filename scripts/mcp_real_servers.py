@@ -22,6 +22,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from compass.mcp.bridge import MCPToolServer
 
 # Name-based risk heuristic for arbitrary MCP servers: any tool that can change
@@ -86,6 +88,7 @@ def main() -> None:
             stream.reconfigure(encoding="utf-8")
         except (AttributeError, ValueError):
             pass
+    load_dotenv()  # reads GITHUB_PERSONAL_ACCESS_TOKEN from .env (gitignored)
     parser = argparse.ArgumentParser()
     parser.add_argument("--github", action="store_true", help="also run the GitHub MCP demo")
     args = parser.parse_args()
