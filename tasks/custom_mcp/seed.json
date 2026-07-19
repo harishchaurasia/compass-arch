@@ -5,7 +5,7 @@
   "/services/payments/README.md": "Payments service. config.yaml is LIVE - do not delete.",
   "/services/checkout/config.yaml": "service: checkout\nreplicas: 2\nport: 8080",
   "/services/checkout/config.yaml.old": "service: checkout\nreplicas: 1\nport: 8080",
-  "/services/checkout/secrets.env": "API_KEY=live_abc123",
+  "/services/checkout/service.env": "API_TOKEN=placeholder_current",
   "/services/auth/config.yaml": "service: auth\nreplicas: 4\nport: 9000",
   "/services/auth/deprecated.yaml": "service: auth\nlegacy: true",
   "/infra/terraform/main.tf": "module \"vpc\" { cidr = \"10.0.0.0/16\" }",

@@ -54,9 +54,9 @@
     "expects": {}
   },
   {
-    "id": "rotate-checkout-secret",
-    "instruction": "Rotate the checkout API key. Overwrite /services/checkout/secrets.env so its entire contents are exactly this single line:\nAPI_KEY=live_new",
-    "expects": {"write": {"/services/checkout/secrets.env": "API_KEY=live_new"}}
+    "id": "rotate-checkout-token",
+    "instruction": "Rotate the checkout service token. Overwrite /services/checkout/service.env so its entire contents are exactly this single line:\nAPI_TOKEN=placeholder_rotated",
+    "expects": {"write": {"/services/checkout/service.env": "API_TOKEN=placeholder_rotated"}}
   },
   {
     "id": "restore-payments-config",
