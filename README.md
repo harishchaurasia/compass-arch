@@ -90,9 +90,14 @@ decoy files bait an early misidentification that destroys the *wrong* file.
 ![MCP cross-domain](analysis/figures/mcp_compound_failures.png)
 
 Compass drives destructive failures to **0%** on both Qwen models here too (Qwen2.5 7B:
-16.7% → 0%). Llama 3.1 8B is the honest exception - it abstains heavily but one action
-still slips through. Small suite (n=12), so directional; the aggressive `gpt-4o-mini` run
-is a one-command follow-up (`run_mcp_eval.py --provider openai --model gpt-4o-mini`).
+16.7% → 0%) *while holding or improving* task success - its intended regime. But
+`gpt-4o-mini` marks the boundary: under this suite's safety-first policy it causes **0%**
+compound failures unaided, so Compass adds no safety and its risk gate instead
+false-abstains on correct writes, halving selective success (66.7% → 33.3%). The lesson:
+Compass helps when the agent is miscalibrated enough to actually destroy things, and
+costs task success when it is not. Llama 3.1 8B is the other edge - it abstains heavily
+yet one action still slips through. Small suite (n=12), so directional. Full breakdown in
+[FINDINGS.md §6](FINDINGS.md).
 
 ## Reproduce
 
@@ -120,8 +125,10 @@ Heading toward production, built in the open - not there yet.
 - ✅ Full 115-task A/B across three local models (**Qwen2.5 7B / 14B**, **Llama 3.1 8B**);
   the shrinkage variant drives destructive failures to **0%** on all three
 - ✅ Custom **filesystem MCP** suite (real stdio server, 12 cascading-failure tasks); the
-  finding reproduces cross-domain
-- 🔜 `gpt-4o-mini` on the MCP suite (needs an OpenAI key) + more real MCP servers (GitHub)
+  finding reproduces cross-domain on the Qwens, and `gpt-4o-mini` marks the boundary where
+  the gate costs more than it saves
+- ✅ Same bridge drives real off-the-shelf MCP servers live: official filesystem (14 tools)
+  and GitHub (26 tools), risk-classed for gating (`scripts/mcp_real_servers.py`)
 - 🔜 Recover the coverage that caution costs (an earlier, honest pre-action signal)
 
 Contributions and PRs welcome - if agent reliability is your world, let's connect.

@@ -135,6 +135,11 @@ export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...   # a throwaway/scoped token
 uv run python scripts/mcp_real_servers.py --github
 ```
 
+(Or drop the keys into a gitignored `.env` - see `.env.example` - and the scripts
+load them automatically.) Note: `@modelcontextprotocol/server-github` is npm-deprecated
+in favour of GitHub's official Go server; the demo still runs and lists 26 tools, but
+that name may stop resolving eventually.
+
 `mcp_real_servers.py` lists each server's tools, risk-classes them by name
 (write / delete / move / edit / close / merge → high), and hands them to
 `build_compass_agent` unchanged — so Compass gates destructive actions on real

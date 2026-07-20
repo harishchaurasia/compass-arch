@@ -422,7 +422,8 @@ def fig_mcp() -> None:
                  fontsize=13, fontweight="bold", loc="left", pad=14)
     fig.text(0.01, 0.03,
              "12 cascading-failure tasks over a purpose-built filesystem MCP server (stdio).\n"
-             "Zero on both Qwens; on Llama 3.1 8B one still slips through. Small n - directional.",
+             "Zero on both Qwens. gpt-4o-mini is already safe unaided (0%), so the gate only\n"
+             "costs selective success here (66.7%->33.3%, not shown) - the boundary; see FINDINGS.",
              fontsize=8.5, color=MUTED, va="bottom")
     fig.tight_layout(rect=(0, 0.08, 1, 1))
     fig.savefig(FIG_DIR / "mcp_compound_failures.png", dpi=200)

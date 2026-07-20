@@ -139,20 +139,32 @@ config instead of its `.bak`, clobber the wrong service, etc). Grading is
 deterministic - the world is reset per trial and diffed - exactly like the retail
 order-mutation check. `mutated_order_ids` here holds filesystem paths.
 
-| Model (MCP fs suite, n=12) | Vanilla compound | Compass compound |
+| Model (MCP fs suite, n=12) | Compound: Vanilla → Compass | Selective success: Vanilla → Compass |
 |---|---|---|
-| qwen2.5:7b | 16.7% (2 destroyed) | **0.0%** |
-| qwen2.5:14b | 8.3% (1 destroyed) | **0.0%** |
-| llama3.1:8b | 8.3% (1 destroyed) | 8.3% (1 destroyed) |
+| qwen2.5:7b | 16.7% (2 destroyed) → **0.0%** | 25.0% → 27.3% |
+| qwen2.5:14b | 8.3% (1 destroyed) → **0.0%** | 33.3% → 44.4% |
+| llama3.1:8b | 8.3% (1 destroyed) → 8.3% | 25.0% → 50.0% (83% abstain) |
+| gpt-4o-mini | 0.0% → 0.0% | 66.7% → **33.3%** |
 
-On both Qwens, Compass drives destructive failures to zero on this suite too, by
-abstaining on the ambiguous destructive calls - the retail result reproduces on a
-different domain and a real MCP transport. Llama 3.1 8B is the honest exception:
-Compass abstains on 83% of trials yet one destructive action still slips through,
-so the gate is not universal. n=12 is small, so these are directional. The
-frontier `gpt-4o-mini` run (the model that mutates most aggressively, so the most
-informative here) needs an OpenAI key: `run_mcp_eval.py --provider openai
---model gpt-4o-mini`.
+On both Qwens - weak, overconfident, and destructive unaided - Compass drives
+compound failures to zero *while holding or improving* selective success, by
+abstaining on the ambiguous destructive calls. That is the retail result
+reproducing on a different domain and a real MCP transport, and it is Compass's
+intended regime.
+
+`gpt-4o-mini` is the honest counter-case, and it inverts the prediction we made
+before running it. Under this suite's safety-first policy it takes **zero**
+destructive actions unaided, so Compass has no compound failure left to prevent -
+and its risk gate instead produces *false abstentions on correct actions* (it
+blocked gpt-4o-mini's correct token-rotation write), halving selective success
+66.7% → 33.3%. So the MCP result is a boundary, not a universal win: Compass pays
+off when the base agent is miscalibrated enough to actually cause compound
+failures, and costs task success when it is not. (This does not contradict §0 -
+on τ-bench *retail* the same model mutated aggressively, 54.8% vanilla compound,
+and Compass helped; the failure mode is task-distribution dependent.) Llama 3.1
+8B is the other edge: Compass abstains on 83% of trials yet one destructive action
+still slips through, so the gate is not universal either. n=12 is small, so these
+are directional.
 
 ## Takeaway
 
@@ -171,7 +183,9 @@ model's failure mode, and the four models span the range:
   action at all, so there is little to gate; shrinkage still cleans up the last one.
 
 Safety costs coverage in every regime: the agent abstains and asks for help more
-often. "Zero" means zero on these 115 tasks, not a proof of perfection. The open
+often. The MCP suite (§6) shows the sharp edge of that trade - on a model that is
+already careful, the coverage cost is paid with no safety benefit to offset it.
+"Zero" means zero on these 115 tasks, not a proof of perfection. The open
 question (Phase 4+) is recovering the lost coverage with an *earlier* honest signal
 that isn't verbalized confidence (e.g. precondition checks in the trajectory before
 a high-risk action).
@@ -188,4 +202,8 @@ uv run python scripts/run_tau_eval.py --provider ollama \
   --model qwen2.5:14b --calibration shrinkage --conditions compass
 # cross-domain: custom filesystem MCP suite (Phase 3)
 uv run python scripts/run_mcp_eval.py --provider ollama --model qwen2.5:14b
+uv run python scripts/run_mcp_eval.py --provider openai --model gpt-4o-mini  # the boundary case
+# same bridge, real off-the-shelf servers (official filesystem + GitHub)
+uv run python scripts/mcp_real_servers.py            # official filesystem MCP
+uv run python scripts/mcp_real_servers.py --github   # GitHub MCP (needs a token in .env)
 ```
