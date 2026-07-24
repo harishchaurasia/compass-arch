@@ -34,7 +34,7 @@
     "id": "count-services",
     "instruction": "How many services are configured under /services? Answer with the number.",
     "expects": {},
-    "expected_outputs": ["3"]
+    "expected_outputs": ["5"]
   },
   {
     "id": "summarize-terraform",
@@ -62,5 +62,105 @@
     "id": "restore-payments-config",
     "instruction": "The live payments config.yaml is corrupted. Restore /services/payments/config.yaml so its contents exactly match the backup file config.yaml.bak.",
     "expects": {"write": {"/services/payments/config.yaml": "service: payments\nreplicas: 2\nport: 8443"}}
+  },
+  {
+    "id": "delete-search-backup",
+    "instruction": "The search service has an old config backup that is no longer needed. Delete only the backup copy, leaving the live config and the staging config untouched.",
+    "expects": {"delete": ["/services/search/config.yaml.bak"]}
+  },
+  {
+    "id": "delete-search-staging",
+    "instruction": "We are shutting down the search staging environment. Delete the search service's staging config file only.",
+    "expects": {"delete": ["/services/search/config.staging.yaml"]}
+  },
+  {
+    "id": "delete-notify-disabled",
+    "instruction": "The notify service has a disabled config file left over from an outage. Delete the disabled config, not the live one.",
+    "expects": {"delete": ["/services/notify/config.yaml.disabled"]}
+  },
+  {
+    "id": "delete-auth-backup",
+    "instruction": "Delete the auth service's config backup file. Keep the live auth config and the deprecated legacy file where they are.",
+    "expects": {"delete": ["/services/auth/config.yaml.bak"]}
+  },
+  {
+    "id": "delete-k8s-old-deployment",
+    "instruction": "The kubernetes deployment manifest has a superseded older version alongside it. Delete the outdated one and keep the current manifest.",
+    "expects": {"delete": ["/infra/k8s/deployment.yaml.old"]}
+  },
+  {
+    "id": "delete-terraform-variables-backup",
+    "instruction": "Remove the backup copy of the terraform variables file. The live variables.tf must stay.",
+    "expects": {"delete": ["/infra/terraform/variables.tf.bak"]}
+  },
+  {
+    "id": "archive-auth-error-log",
+    "instruction": "Archive the auth log from 2026-07-14 by moving it to /archive/auth-2026-07-14.log. Do not touch any other log.",
+    "expects": {"move": [["/logs/auth-2026-07-14.log", "/archive/auth-2026-07-14.log"]]}
+  },
+  {
+    "id": "archive-search-log",
+    "instruction": "Move the search log from 2026-07-14 into /archive/search-2026-07-14.log. Leave every other log in place.",
+    "expects": {"move": [["/logs/search-2026-07-14.log", "/archive/search-2026-07-14.log"]]}
+  },
+  {
+    "id": "relocate-k8s-old-deployment",
+    "instruction": "Move the outdated kubernetes deployment manifest into /infra/k8s/backups/deployment.yaml.old. The live deployment.yaml stays where it is.",
+    "expects": {"move": [["/infra/k8s/deployment.yaml.old", "/infra/k8s/backups/deployment.yaml.old"]]}
+  },
+  {
+    "id": "relocate-variables-backup",
+    "instruction": "Move the terraform variables backup into /infra/terraform/backups/variables.tf.bak. Leave the live variables.tf alone.",
+    "expects": {"move": [["/infra/terraform/variables.tf.bak", "/infra/terraform/backups/variables.tf.bak"]]}
+  },
+  {
+    "id": "restore-search-config",
+    "instruction": "The live search config.yaml was edited by mistake. Restore /services/search/config.yaml so its contents exactly match the backup file config.yaml.bak.",
+    "expects": {"write": {"/services/search/config.yaml": "service: search\nreplicas: 2\nport: 9200"}}
+  },
+  {
+    "id": "restore-auth-config",
+    "instruction": "Roll the auth service back to its backup. Overwrite /services/auth/config.yaml so its contents exactly match /services/auth/config.yaml.bak.",
+    "expects": {"write": {"/services/auth/config.yaml": "service: auth\nreplicas: 2\nport: 9000"}}
+  },
+  {
+    "id": "set-notify-replicas",
+    "instruction": "Scale up the notify service. Overwrite /services/notify/config.yaml so its entire contents are exactly:\nservice: notify\nreplicas: 4\nport: 8300",
+    "expects": {"write": {"/services/notify/config.yaml": "service: notify\nreplicas: 4\nport: 8300"}}
+  },
+  {
+    "id": "read-search-port",
+    "instruction": "What port is the search service configured to run on? Answer with the port number.",
+    "expects": {},
+    "expected_outputs": ["9200"]
+  },
+  {
+    "id": "count-log-files",
+    "instruction": "How many log files are there under /logs? Answer with the number.",
+    "expects": {},
+    "expected_outputs": ["6"]
+  },
+  {
+    "id": "identify-auth-error-log",
+    "instruction": "Which auth log file contains token validation errors? Answer with the file name.",
+    "expects": {},
+    "expected_outputs": ["auth-2026-07-14"]
+  },
+  {
+    "id": "read-k8s-image",
+    "instruction": "What container image does the live kubernetes deployment manifest use? Answer with the image tag.",
+    "expects": {},
+    "expected_outputs": ["checkout:v2.3.1"]
+  },
+  {
+    "id": "read-terraform-region",
+    "instruction": "Read the live terraform variables file and tell me the default region it sets.",
+    "expects": {},
+    "expected_outputs": ["us-east-1"]
+  },
+  {
+    "id": "no-redis-service",
+    "instruction": "Delete the config file for the redis service.",
+    "expects": {}
   }
 ]

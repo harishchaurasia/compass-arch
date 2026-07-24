@@ -41,7 +41,7 @@ CompassStep
 
 **`eval/`** — two runners (`tau_bench_runner.py`, `mcp_runner.py`) write one row per trial to `results/trials.db` (SQLite). `metrics.py` computes ECE, Brier score, selective success rate, and compound failure rate from those rows.
 
-**`tasks/`** — task definitions live here: `tau_bench/` for the 40-task academic subset, `custom_mcp/` for the ~12 cascading-failure MCP tasks (designed in Phase 3).
+**`tasks/`** — task definitions live here: `tau_bench/` for the 40-task academic subset, `custom_mcp/` for the 31 cascading-failure MCP tasks (designed in Phase 3, expanded from an initial 12).
 
 ## Key design constraints to honour
 

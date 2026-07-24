@@ -124,7 +124,7 @@ This represents the current production deployment baseline. Not a strawman — w
 
 **τ-bench subset — 40 tasks.** Balanced retail + airline domains. Used as the academic anchor: results are directly comparable to AUQ and HTC paper evaluations. We subsample (don't run all 165) for budget and statistical sufficiency.
 
-**Custom MCP suite — ~12 tasks.** Designed across 2–3 real public MCP servers (GitHub MCP, Linear MCP, Slack MCP, or similar). Tasks are _deliberately designed_ to have cascading-failure potential: an early wrong tool call poisons the rest of the trajectory. This is the production-grounding half of the eval and the source of the demo video.
+**Custom MCP suite - 31 tasks** (as built; started at ~12). Runs on a purpose-built filesystem MCP server (real JSON-RPC over stdio) so grading is deterministic (reset-and-diff a seeded config-store world), and the same bridge also drives real off-the-shelf servers (official filesystem + GitHub) unchanged. Tasks are _deliberately designed_ to have cascading-failure potential: an early misidentification leads the agent to destroy the _wrong_ file. This is the production-grounding half of the eval and the source of the demo video.
 
 The custom MCP task design happens _after_ Phase 1 pilot reveals what failure patterns we want to amplify.
 
@@ -195,7 +195,7 @@ compass/
 │   └── metrics.py                       # ECE, Brier, selective accuracy, compound failure
 ├── tasks/                                # task definitions
 │   ├── tau_bench/                       # subset of τ-bench
-│   └── custom_mcp/                      # ~12 custom MCP tasks
+│   └── custom_mcp/                      # 31 custom MCP tasks
 ├── results/
 │   └── trials.db                        # SQLite of every trial
 ├── analysis/                             # Jupyter notebooks

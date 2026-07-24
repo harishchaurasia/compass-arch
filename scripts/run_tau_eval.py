@@ -72,6 +72,17 @@ def main() -> None:
         help="compass aggregator variant; 'shrinkage' is the Phase 4 base-rate prior. "
              "Rows are stored under model='<model>-shrink' so the locked baseline is untouched.",
     )
+    parser.add_argument(
+        "--no-verification", action="store_true",
+        help="ablation: strip SELF_VERIFY and the high-risk confirm pass so the gate "
+             "is purely EXECUTE/ABSTAIN. Rows are stored under model='<model>-noverify'.",
+    )
+    parser.add_argument(
+        "--t-high", type=float, default=None,
+        help="sensitivity sweep only: override the high-risk threshold for THIS run "
+             "(shipped locked value stays 0.8 in policy.py). Rows are stored under "
+             "model='<model>-thigh<value>' so swept data never mixes with the locked run.",
+    )
     args = parser.parse_args()
 
     load_dotenv()
@@ -85,12 +96,24 @@ def main() -> None:
     shrink = args.calibration == "shrinkage"
     # Tag stored rows for the variant so its data never mixes with the locked
     # baseline; the underlying provider model name is unchanged.
-    model_label = f"{args.model}-shrink" if shrink else args.model
+    model_label = args.model
+    if shrink:
+        model_label += "-shrink"
+    if args.no_verification:
+        model_label += "-noverify"
+    if args.t_high is not None:
+        # Sensitivity sweep: reassign the module global (decide() reads it at call
+        # time) so this process gates at the swept threshold. policy.py's shipped
+        # default is untouched on disk — this override lives only in memory here.
+        import compass.policy as _policy
+        _policy.T_HIGH = args.t_high
+        model_label += f"-thigh{args.t_high:g}"
 
     model = get_model(args.provider, args.model, temperature=0)
     vanilla = build_vanilla_agent(model, ALL_TOOLS, policy=policy)
     compass = build_compass_agent(
-        model, ALL_TOOLS, tool_risk=TOOL_RISK, policy=policy, calibration_shrink=shrink
+        model, ALL_TOOLS, tool_risk=TOOL_RISK, policy=policy, calibration_shrink=shrink,
+        verification=not args.no_verification,
     )
 
     print(f"\n{'─' * 60}")

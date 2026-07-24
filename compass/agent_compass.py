@@ -142,13 +142,20 @@ def build_compass_agent(
     tool_risk: dict[str, str] | None = None,
     policy: str | None = None,
     calibration_shrink: bool = False,
+    verification: bool = True,
 ) -> StateGraph:
     """tool_risk maps tool name → static risk class ('low'|'medium'|'high').
     Effective risk is max(model's verbalized risk_level, tool class), so an
     under-labelled destructive tool is still gated as high. policy, when
     given, is embedded in the system prompt (e.g. the τ-bench retail wiki).
     calibration_shrink=True selects the Phase 4 shrinkage aggregator (baseline
-    stays the default)."""
+    stays the default).
+
+    verification=False is the ablation arm: it strips SELF_VERIFY and the
+    high-risk confirm pass so the gate is purely EXECUTE vs ABSTAIN. Shipped
+    Compass keeps verification on; the arm exists to separate how much of the
+    safety result comes from verification steering the agent off a destructive
+    path versus from abstention alone."""
     tool_risk = tool_risk or {}
     tool_map = {t.name: t for t in tools}
     # Local (Ollama) models don't reliably emit native tool_calls, so
@@ -202,6 +209,11 @@ def build_compass_agent(
         success_prob = calibrate(step.confidence, features, shrink=calibration_shrink)
         risk = _effective_risk(step)
         decision = decide(success_prob, risk)
+        if not verification:
+            # Ablation: no SELF_VERIFY, no confirm pass. Whatever the policy
+            # does not abstain on gets executed immediately, so any remaining
+            # safety effect is attributable to abstention alone.
+            return "abstain" if decision == PolicyDecision.ABSTAIN else "execute"
         # Escalate to abstain if SELF_VERIFY keeps firing without any execution
         if decision == PolicyDecision.SELF_VERIFY and state["self_verify_count"] >= MAX_SELF_VERIFY:
             return "abstain"

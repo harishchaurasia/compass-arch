@@ -170,7 +170,8 @@ def fig_headline(models: list[str]) -> None:
     fig.text(0.01, 0.955,
              "115 τ-bench retail tasks (single-shot), per model. Where a model's confidence "
              "is flat and overconfident, baseline Compass can't gate the first risky action; "
-             "the base-rate-prior (shrinkage) variant recovers the gate.",
+             "shrinkage drives compound failure to zero by blocking high-risk execution outright "
+             "(see FINDINGS §3), not by gating more precisely.",
              fontsize=8.5, color=INK_2, va="top")
     fig.tight_layout(rect=(0, 0.05, 1, 0.93))
     fig.savefig(FIG_DIR / "headline_metrics.png", dpi=200)
@@ -388,44 +389,52 @@ def _mcp_metrics(model: str, cond: str) -> dict:
 
 def fig_mcp() -> None:
     """Compound-failure rate (the safety headline) on the custom MCP filesystem
-    suite, vanilla vs Compass, per local model. Small n=12, so directional."""
+    suite, vanilla vs Compass vs Compass+shrinkage, per model (n=31). Baseline
+    Compass only halves compound on the Qwens; shrinkage reaches 0 by blocking
+    high-risk execution outright (FINDINGS §3)."""
     models = mcp_models()
     if not models:
         return
     labels = {"qwen2.5:14b": "Qwen2.5 14B", "qwen2.5:7b": "Qwen2.5 7B",
               "llama3.1:8b": "Llama 3.1 8B", "gpt-4o-mini": "gpt-4o-mini"}
+    series = [("vanilla", GRAY, "Vanilla ReAct", lambda m: _mcp_metrics(m, "vanilla")),
+              ("compass", BLUE, "Compass", lambda m: _mcp_metrics(m, "compass")),
+              ("shrink", AQUA, "Compass + shrinkage",
+               lambda m: _mcp_metrics(SHRINK_OF[m], "compass") if m in SHRINK_OF else None)]
     ys = list(range(len(models)))
-    h = 0.38
-    fig, ax = plt.subplots(figsize=(8.6, 0.9 * len(models) + 2.4))
-    for si, (cond, color, lbl) in enumerate(
-        [("vanilla", GRAY, "Vanilla ReAct"), ("compass", BLUE, "Compass")]
-    ):
-        offset = (si - 0.5) * h
-        vals = [_mcp_metrics(m, cond) for m in models]
-        bars = ax.barh([y + offset for y in ys], [v["compound"] for v in vals],
-                       height=h * 0.86, color=color, label=lbl)
-        for b, v in zip(bars, vals):
-            txt = f"{b.get_width():.0%}" + (f"  ({v['destroyed']} destroyed)" if v["destroyed"] else "")
+    fig, ax = plt.subplots(figsize=(8.8, 1.05 * len(models) + 2.6))
+    for mi, m in enumerate(models):
+        present = [s for s in series if s[3](m) is not None]
+        nser = len(present)
+        h = 0.8 / nser
+        for si, (cond, color, lbl, fn) in enumerate(present):
+            offset = (si - (nser - 1) / 2) * h
+            v = fn(m)
+            b = ax.barh(ys[mi] + offset, v["compound"], height=h * 0.86, color=color)[0]
+            txt = f"{b.get_width():.0%}" + (f"  ({v['destroyed']})" if v["destroyed"] else "")
             ax.annotate(txt, (b.get_width(), b.get_y() + b.get_height() / 2),
-                        xytext=(5, 0), textcoords="offset points", va="center",
-                        fontsize=9.5, color=INK)
+                        xytext=(4, 0), textcoords="offset points", va="center",
+                        fontsize=9, color=INK)
     ax.set_yticks(ys, [labels.get(m, m) for m in models], fontsize=10, color=INK)
-    ax.set_xlim(0, 0.30)
+    ax.set_xlim(0, 0.17)
     ax.invert_yaxis()
     ax.xaxis.set_major_formatter(lambda v, _: f"{v:.0%}")
     ax.grid(axis="x", color=GRID, linewidth=0.8)
     ax.set_axisbelow(True)
     for spine in ("top", "right", "left"):
         ax.spines[spine].set_visible(False)
-    ax.legend(loc="lower right", frameon=False, fontsize=9.5)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c, _, _ in series]
+    ax.legend(handles, [s[2] for s in series], loc="lower right", frameon=False, fontsize=9)
     ax.set_title("Cross-domain check: destructive failures on a real MCP filesystem server",
                  fontsize=13, fontweight="bold", loc="left", pad=14)
     fig.text(0.01, 0.03,
-             "12 cascading-failure tasks over a purpose-built filesystem MCP server (stdio).\n"
-             "Zero on both Qwens. gpt-4o-mini is already safe unaided (0%), so the gate only\n"
-             "costs selective success here (66.7%->33.3%, not shown) - the boundary; see FINDINGS.",
+             "31 cascading-failure tasks over a purpose-built filesystem MCP server (stdio); "
+             "count of destroyed files in parens.\nBaseline Compass only halves compound on the "
+             "Qwens; shrinkage reaches 0 by blocking high-risk execution outright (FINDINGS §3).\n"
+             "gpt-4o-mini is already safe unaided (0%), so the gate only costs selective success "
+             "(74.2%->33.3%) - the boundary.",
              fontsize=8.5, color=MUTED, va="bottom")
-    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    fig.tight_layout(rect=(0, 0.10, 1, 1))
     fig.savefig(FIG_DIR / "mcp_compound_failures.png", dpi=200)
     plt.close(fig)
 

@@ -63,12 +63,34 @@ def main() -> None:
         "--calibration", default="baseline", choices=["baseline", "shrinkage"],
         help="compass aggregator variant; rows stored under model='<model>-shrink'.",
     )
+    parser.add_argument(
+        "--no-verification", action="store_true",
+        help="ablation: strip SELF_VERIFY and the high-risk confirm pass so the gate "
+             "is purely EXECUTE/ABSTAIN. Rows stored under model='<model>-noverify'.",
+    )
+    parser.add_argument(
+        "--t-high", type=float, default=None,
+        help="sensitivity sweep only: override the high-risk threshold for THIS run "
+             "(shipped locked value stays 0.8 in policy.py). Rows stored under "
+             "model='<model>-thigh<value>' so swept data never mixes with the locked run.",
+    )
     args = parser.parse_args()
 
     load_dotenv()
     tasks = TASKS[: args.limit] if args.limit else TASKS
     shrink = args.calibration == "shrinkage"
-    model_label = f"{args.model}-shrink" if shrink else args.model
+    model_label = args.model
+    if shrink:
+        model_label += "-shrink"
+    if args.no_verification:
+        model_label += "-noverify"
+    if args.t_high is not None:
+        # Sensitivity sweep: reassign the module global (decide() reads it at call
+        # time) so this process gates at the swept threshold. policy.py's shipped
+        # default is untouched on disk — this override lives only in memory here.
+        import compass.policy as _policy
+        _policy.T_HIGH = args.t_high
+        model_label += f"-thigh{args.t_high:g}"
 
     server = MCPToolServer(sys.executable, ["-m", "compass.mcp.fs_server"])
     try:
@@ -78,7 +100,7 @@ def main() -> None:
             "vanilla": build_vanilla_agent(model, tools, policy=POLICY),
             "compass": build_compass_agent(
                 model, tools, tool_risk=fs_backend.TOOL_RISK, policy=POLICY,
-                calibration_shrink=shrink,
+                calibration_shrink=shrink, verification=not args.no_verification,
             ),
         }
 

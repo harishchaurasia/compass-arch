@@ -662,3 +662,108 @@ def test_policy_included_in_system_prompt():
     agent.invoke(_init_state("hi"))
 
     assert "authenticate first" in seen[0][0].content
+
+
+# ── verification ablation (verification=False) ────────────────────────────────
+
+def test_ablation_skips_self_verify_and_executes_directly():
+    """verification=False: a medium-risk step below T_MED would normally
+    SELF_VERIFY. In the ablation it executes immediately instead."""
+    called = []
+
+    @tool
+    def touch_record(record_id: str) -> str:
+        """Update a record."""
+        called.append(record_id)
+        return "updated"
+
+    steps = [
+        CompassStep(
+            reasoning="Not sure about this.",
+            action=CompassAction(tool="touch_record", args={"record_id": "r2"}),
+            confidence=0.4,  # below T_MED=0.6 → SELF_VERIFY when verification is on
+            risk_level="medium",
+        ),
+        CompassStep(
+            reasoning="Done.",
+            action=CompassAction(final_answer="Updated r2."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(
+        FakeCompassModel(steps), [touch_record], verification=False
+    )
+    state = agent.invoke(_init_state("Update r2"))
+
+    assert called == ["r2"]  # executed without a verify detour
+    assert state["abstained"] is False
+    all_content = " ".join(
+        m.content for m in state["messages"] if hasattr(m, "content")
+    ).lower()
+    assert "verify your plan" not in all_content
+
+
+def test_ablation_skips_high_risk_confirm_pass():
+    """verification=False: a high-risk step above T_HIGH executes on the first
+    step, with no confirmation prompt injected."""
+    called = []
+
+    @tool
+    def cancel_subscription(sub_id: str) -> str:
+        """Cancel a subscription (irreversible)."""
+        called.append(sub_id)
+        return "cancelled"
+
+    steps = [
+        CompassStep(
+            reasoning="User asked to cancel.",
+            action=CompassAction(tool="cancel_subscription", args={"sub_id": "s1"}),
+            confidence=0.9,  # above T_HIGH
+            risk_level="high",
+        ),
+        CompassStep(
+            reasoning="Done.",
+            action=CompassAction(final_answer="Subscription cancelled."),
+            confidence=0.95,
+            risk_level="low",
+        ),
+    ]
+    agent = build_compass_agent(
+        FakeCompassModel(steps), [cancel_subscription], verification=False
+    )
+    state = agent.invoke(_init_state("Cancel subscription s1"))
+
+    assert called == ["s1"]
+    all_content = " ".join(
+        m.content for m in state["messages"] if hasattr(m, "content")
+    ).lower()
+    assert "high-risk action" not in all_content  # no confirm prompt
+
+
+def test_ablation_still_abstains_on_high_risk_low_confidence():
+    """The ablation removes verification, not the gate: a high-risk step below
+    T_HIGH must still abstain and never touch the tool."""
+    called = []
+
+    @tool
+    def risky_delete(record_id: str) -> str:
+        """Delete a record permanently."""
+        called.append(record_id)
+        return "deleted"
+
+    steps = [
+        CompassStep(
+            reasoning="Probably the right record.",
+            action=CompassAction(tool="risky_delete", args={"record_id": "r99"}),
+            confidence=0.3,  # below T_HIGH → abstain
+            risk_level="high",
+        ),
+    ]
+    agent = build_compass_agent(
+        FakeCompassModel(steps), [risky_delete], verification=False
+    )
+    state = agent.invoke(_init_state("Delete r99"))
+
+    assert state["abstained"] is True
+    assert called == []
