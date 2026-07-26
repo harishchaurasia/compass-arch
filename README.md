@@ -114,22 +114,38 @@ Calibration improves too: ECE drops on every model (Qwen2.5 14B: 0.89 → 0.64).
 ## A second real domain: airline
 
 The same suite family has a harder domain: τ-bench **airline** (50 real tasks, flights and
-reservations), where bookings and cancellations are **irreversible**. Run on `gpt-4o-mini`
-(local models pending):
+reservations), where bookings and cancellations are **irreversible**. Compound failure across all
+four models:
 
-| gpt-4o-mini, airline | Vanilla | Compass |
-|---|---|---|
-| Task success | 6% | **34%** |
-| Compound failure | **78%** | **28%** |
-| Abstention | 0% | 56% |
+| Model | Vanilla | Compass | + Shrinkage |
+|---|---|---|---|
+| gpt-4o-mini *(frontier)* | 78% | **28%** | n/a |
+| Qwen2.5 14B | 28% | 42% | **0%** |
+| Qwen2.5 7B | 24% | 24% | **0%** |
+| Llama 3.1 8B | 6% | **0%** | **0%** |
 
-Airline punishes overacting: unaided, `gpt-4o-mini` destroys the *wrong* reservation on **78%** of
-tasks. Compass cuts that to 28% and lifts task success from 6% to 34% - the retail pattern,
-replicated on a different real domain. The honesty cuts both ways, though: 28% is **not zero** (14
-of 50 confident-wrong bookings still clear the gate), and the reduction is bought with **56%
-abstention**, not sharp discrimination. Here `gpt-4o-mini`'s confidence is as miscalibrated as the
-local models' on retail (ECE 0.62, mean confidence 0.96), so trajectory decay - not the verbalized
-score - does most of the gating. The gate is a broad caution filter, not a wall.
+Airline replicates the retail thesis on a different real domain: what baseline Compass buys still
+depends entirely on the model's failure mode, and shrinkage's zero is a blunt block, not fine gating.
+
+- **gpt-4o-mini** is catastrophic unaided here, destroying the *wrong* reservation on **78%** of
+  tasks. Baseline Compass cuts that to 28% and lifts task success from 6% to 34% - but through
+  **56% abstention**, not sharp discrimination, and 28% is **not zero** (14 of 50 confident-wrong
+  bookings still clear the gate). Its confidence is as miscalibrated as the local models' here
+  (ECE 0.62), so trajectory decay, not the verbalized score, does most of the gating.
+- **Qwen2.5 14B** gets *worse* under baseline Compass (28% → 42%) - the same regression it shows on
+  retail. Flat ~1.0 confidence blinds the gate to the first high-risk action, and the confirm pass
+  adds destructive retries.
+- **Qwen2.5 7B** is unmoved by baseline Compass (24% → 24%).
+- **Llama 3.1 8B** is the best-behaved model on this suite: it rarely destroys anything to begin
+  with (6%), and Compass cleans up the rest at just **2% abstention** - the one case where the gate
+  is nearly free. (On MCP the same model instead collapsed into 97% abstention; the failure mode is
+  domain-specific.)
+
+**Shrinkage drives compound failures to 0% on all three local models**, exactly as on retail and
+MCP and by the same mechanism: its 0.75 confidence ceiling sits below the 0.8 high-risk threshold,
+so every high-risk booking or cancellation is blocked outright. The cost is **50-76% abstention** on
+the Qwens (near-zero on Llama, which barely acts). Zero by refusal, not by a score that tells good
+bookings from bad.
 
 ## Cross-domain: a real MCP server
 
@@ -191,7 +207,7 @@ Built in the open, heading toward production - not there yet.
 
 - ✅ Calibrated agent + locked rule-based aggregator
 - ✅ 115-task retail A/B across **4 models**; shrinkage drives destructive failures to **0%** on all three local ones (by blocking high-risk execution, not by finer gating)
-- ✅ Second real τ-bench domain (**airline**, 50 tasks): on `gpt-4o-mini`, compound failures **78% → 28%** and success **6% → 34%**; local models pending
+- ✅ Second real τ-bench domain (**airline**, 50 tasks, all 4 models): baseline Compass tracks failure mode (helps `gpt-4o-mini` **78% → 28%**, hurts Qwen14B **28% → 42%**); shrinkage zeros compound on all three local models
 - ✅ **Filesystem MCP** suite (31 tasks, real stdio server); reproduces cross-domain, with `gpt-4o-mini` marking the boundary
 - ✅ Verification ablation + `T_HIGH` sweep locate where the safety actually comes from ([FINDINGS.md](FINDINGS.md) §7-8)
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)
