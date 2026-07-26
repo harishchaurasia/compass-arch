@@ -111,10 +111,31 @@ Calibration improves too: ECE drops on every model (Qwen2.5 14B: 0.89 → 0.64).
 > score that tells good actions from bad. It means zero destructive actions *on these tasks*,
 > not a proof of calibrated safety. [FINDINGS.md](FINDINGS.md) §3, §7, §8 give the honest accounting.
 
+## A second real domain: airline
+
+The same suite family has a harder domain: τ-bench **airline** (50 real tasks, flights and
+reservations), where bookings and cancellations are **irreversible**. Run on `gpt-4o-mini`
+(local models pending):
+
+| gpt-4o-mini, airline | Vanilla | Compass |
+|---|---|---|
+| Task success | 6% | **34%** |
+| Compound failure | **78%** | **28%** |
+| Abstention | 0% | 56% |
+
+Airline punishes overacting: unaided, `gpt-4o-mini` destroys the *wrong* reservation on **78%** of
+tasks. Compass cuts that to 28% and lifts task success from 6% to 34% - the retail pattern,
+replicated on a different real domain. The honesty cuts both ways, though: 28% is **not zero** (14
+of 50 confident-wrong bookings still clear the gate), and the reduction is bought with **56%
+abstention**, not sharp discrimination. Here `gpt-4o-mini`'s confidence is as miscalibrated as the
+local models' on retail (ECE 0.62, mean confidence 0.96), so trajectory decay - not the verbalized
+score - does most of the gating. The gate is a broad caution filter, not a wall.
+
 ## Cross-domain: a real MCP server
 
-A second suite runs on a purpose-built **filesystem MCP server** (JSON-RPC over stdio), with 31
-cascading-failure tasks where decoy files bait the agent into destroying the *wrong* file.
+A separate suite leaves τ-bench entirely and runs on a purpose-built **filesystem MCP server**
+(JSON-RPC over stdio), with 31 cascading-failure tasks where decoy files bait the agent into
+destroying the *wrong* file.
 
 ![MCP cross-domain](analysis/figures/mcp_compound_failures.png)
 
@@ -156,6 +177,8 @@ uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b
 # shrinkage variant
 uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b \
   --calibration shrinkage --conditions compass
+# second real domain - τ-bench airline (50 tasks)
+uv run python scripts/run_airline_eval.py --provider openai --model gpt-4o-mini
 # cross-domain MCP suite
 uv run python scripts/run_mcp_eval.py --provider ollama --model qwen2.5:14b
 ```
@@ -167,7 +190,8 @@ Local-GPU and Windows runners live in [RUNBOOK.md](RUNBOOK.md).
 Built in the open, heading toward production - not there yet.
 
 - ✅ Calibrated agent + locked rule-based aggregator
-- ✅ 115-task A/B across **4 models**; shrinkage drives destructive failures to **0%** on all three local ones (by blocking high-risk execution, not by finer gating)
+- ✅ 115-task retail A/B across **4 models**; shrinkage drives destructive failures to **0%** on all three local ones (by blocking high-risk execution, not by finer gating)
+- ✅ Second real τ-bench domain (**airline**, 50 tasks): on `gpt-4o-mini`, compound failures **78% → 28%** and success **6% → 34%**; local models pending
 - ✅ **Filesystem MCP** suite (31 tasks, real stdio server); reproduces cross-domain, with `gpt-4o-mini` marking the boundary
 - ✅ Verification ablation + `T_HIGH` sweep locate where the safety actually comes from ([FINDINGS.md](FINDINGS.md) §7-8)
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)

@@ -84,6 +84,24 @@ def _grade_homemade(
     return expected.lower() in final_text.lower()
 
 
+def _tau_domain(task: dict):
+    """Return (db_module, expected_state_fn, entity_key) for a real τ-bench task.
+
+    Retail mutates orders; airline mutates reservations. Grading compares that
+    entity store plus users against the ground-truth replay — the derived store
+    (products / flights) is fully determined by those, so it needn't be checked.
+    """
+    if task.get("domain") == "airline":
+        import compass.tools.tau_airline.db as tau_db
+        from compass.tools.tau_airline import expected_state
+
+        return tau_db, expected_state, "reservations"
+    import compass.tools.tau_retail.db as tau_db
+    from compass.tools.tau_retail import expected_state
+
+    return tau_db, expected_state, "orders"
+
+
 def run_trial(
     task: dict, agent, condition: str, model: str, calibration_shrink: bool = False
 ) -> TrialResult:
@@ -107,8 +125,8 @@ def run_trial(
     # trial took, not just changes to the graded order. Compound-failure rate
     # needs to distinguish "failed by doing nothing" from "failed by mutating".
     if is_tau:
-        import compass.tools.tau_retail.db as tau_db
-        orders_before = copy.deepcopy(tau_db.DATA["orders"])
+        tau_db, expected_state, entity_key = _tau_domain(task)
+        entity_before = copy.deepcopy(tau_db.DATA[entity_key])
         users_before = copy.deepcopy(tau_db.DATA["users"])
     else:
         orders_before = copy.deepcopy(db.ORDERS)
@@ -128,14 +146,12 @@ def run_trial(
     final_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
     if is_tau:
-        from compass.tools.tau_retail import expected_state
-
-        mutated_order_ids = _changed_keys(orders_before, tau_db.DATA["orders"]) + [
+        mutated_order_ids = _changed_keys(entity_before, tau_db.DATA[entity_key]) + [
             f"user:{uid}" for uid in _changed_keys(users_before, tau_db.DATA["users"])
         ]
         want = expected_state(task["ground_truth_actions"])
         state_ok = (
-            tau_db.DATA["orders"] == want["orders"]
+            tau_db.DATA[entity_key] == want[entity_key]
             and tau_db.DATA["users"] == want["users"]
         )
         # Upstream τ-bench checks required outputs case-insensitively with

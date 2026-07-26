@@ -1,0 +1,167 @@
+"""Run the vendored τ-bench airline suite (single-shot variant).
+
+Usage:
+    uv run python scripts/run_airline_eval.py                # all 50 tasks × 2 conditions
+    uv run python scripts/run_airline_eval.py --limit 3      # smoke: first 3 tasks
+    uv run python scripts/run_airline_eval.py --model gpt-4o-mini
+    uv run python scripts/run_airline_eval.py --provider ollama --model qwen2.5:7b
+
+Writes one row per trial to results/trials.db (task ids are tau_airline_*,
+distinguishing them from the retail tau_retail_* suite). Mirrors
+run_tau_eval.py; the runner's grading dispatches on task["domain"].
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+import compass.tools.tau_airline.db as tau_db
+from compass.agent_compass import build_compass_agent
+from compass.agent_vanilla import build_vanilla_agent
+from compass.models import get_model
+from compass.tools.tau_airline import ALL_TOOLS, TOOL_RISK
+from eval.metrics import compound_failure_rate, selective_success_rate
+from eval.tau_bench_runner import run_trial
+from eval.trial_store import load_trials, save_trial
+
+# Windows consoles default stdout to cp1252, which can't encode the box-drawing
+# and ✓/✗ glyphs this script prints — force UTF-8 so runs work identically.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
+ROOT = Path(__file__).parent.parent
+TASKS_FILE = ROOT / "tasks" / "tau_bench" / "airline_tasks.json"
+WIKI_FILE = ROOT / "tasks" / "tau_bench" / "airline_data" / "wiki.md"
+DB_PATH = ROOT / "results" / "trials.db"
+
+# τ-bench instructions are briefs for an interactive user simulator; our
+# variant is single-shot. Without this framing both agents (correctly, per
+# policy) stop to ask the customer for confirmation that can never come.
+_SINGLE_SHOT_TEMPLATE = (
+    "Customer request (single-shot; written from the customer's perspective):\n"
+    "{instruction}\n\n"
+    "The customer has already given explicit confirmation for the actions "
+    "requested above. Complete everything the policy allows in this single "
+    "interaction without asking follow-up questions. If something cannot be "
+    "done under policy, say so or transfer to a human agent."
+)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default="gpt-4o-mini")
+    parser.add_argument(
+        "--provider", default="openai",
+        choices=["openai", "ollama", "anthropic", "google_genai"],
+        help="model provider (ollama for local GPU runs, e.g. qwen2.5:7b)",
+    )
+    parser.add_argument("--limit", type=int, default=None, help="run first N tasks only")
+    parser.add_argument("--task-ids", nargs="*", default=None, help="run only these task ids")
+    parser.add_argument(
+        "--conditions", nargs="*", default=["vanilla", "compass"],
+        choices=["vanilla", "compass"],
+    )
+    parser.add_argument(
+        "--calibration", default="baseline", choices=["baseline", "shrinkage"],
+        help="compass aggregator variant; 'shrinkage' is the Phase 4 base-rate prior. "
+             "Rows are stored under model='<model>-shrink' so the locked baseline is untouched.",
+    )
+    parser.add_argument(
+        "--no-verification", action="store_true",
+        help="ablation: strip SELF_VERIFY and the high-risk confirm pass so the gate "
+             "is purely EXECUTE/ABSTAIN. Rows are stored under model='<model>-noverify'.",
+    )
+    parser.add_argument(
+        "--t-high", type=float, default=None,
+        help="sensitivity sweep only: override the high-risk threshold for THIS run "
+             "(shipped locked value stays 0.8 in policy.py). Rows are stored under "
+             "model='<model>-thigh<value>' so swept data never mixes with the locked run.",
+    )
+    args = parser.parse_args()
+
+    load_dotenv()
+    tasks = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+    if args.task_ids:
+        tasks = [t for t in tasks if t["id"] in set(args.task_ids)]
+    if args.limit:
+        tasks = tasks[: args.limit]
+    policy = WIKI_FILE.read_text(encoding="utf-8")
+
+    shrink = args.calibration == "shrinkage"
+    # Tag stored rows for the variant so its data never mixes with the locked
+    # baseline; the underlying provider model name is unchanged.
+    model_label = args.model
+    if shrink:
+        model_label += "-shrink"
+    if args.no_verification:
+        model_label += "-noverify"
+    if args.t_high is not None:
+        # Sensitivity sweep: reassign the module global (decide() reads it at call
+        # time) so this process gates at the swept threshold. policy.py's shipped
+        # default is untouched on disk — this override lives only in memory here.
+        import compass.policy as _policy
+        _policy.T_HIGH = args.t_high
+        model_label += f"-thigh{args.t_high:g}"
+
+    model = get_model(args.provider, args.model, temperature=0)
+    vanilla = build_vanilla_agent(model, ALL_TOOLS, policy=policy)
+    compass = build_compass_agent(
+        model, ALL_TOOLS, tool_risk=TOOL_RISK, policy=policy, calibration_shrink=shrink,
+        verification=not args.no_verification,
+    )
+
+    print(f"\n{'─' * 60}")
+    print(f"τ-bench airline (single-shot)  |  {len(tasks)} tasks × 2 conditions  |  {model_label}")
+    print(f"{'─' * 60}\n")
+
+    for task in tasks:
+        task = {
+            **task,
+            "instruction": _SINGLE_SHOT_TEMPLATE.format(instruction=task["instruction"]),
+        }
+        agents = [("vanilla", vanilla), ("compass", compass)]
+        for condition, agent in [(c, a) for c, a in agents if c in args.conditions]:
+            print(f"  {task['id']} / {condition} ... ", end="", flush=True)
+            try:
+                tau_db.reset()
+                result = run_trial(
+                    task, agent, condition=condition, model=model_label,
+                    calibration_shrink=shrink,
+                )
+                save_trial(result, DB_PATH)
+                status = "✓" if result.success else "✗"
+                extra = ""
+                if condition == "compass":
+                    extra = f"  conf={[round(c, 2) for c in result.confidence_scores]}"
+                if result.abstained:
+                    extra += "  [ABSTAINED]"
+                if not result.success and result.mutated_order_ids:
+                    extra += f"  [MUTATED {result.mutated_order_ids}]"
+                print(f"{status}  steps={result.steps}{extra}")
+            except Exception as e:
+                print(f"ERROR: {type(e).__name__}: {e}")
+
+    # ── summary over this suite (all models/rows with tau_airline_ prefix) ────
+    rows = [
+        r for r in load_trials(DB_PATH)
+        if r.task_id.startswith("tau_airline_") and r.model == model_label
+    ]
+    print(f"\n{'─' * 60}\nSUMMARY ({model_label}, all tau_airline rows in db)\n{'─' * 60}")
+    for condition in ("vanilla", "compass"):
+        subset = [r for r in rows if r.condition == condition]
+        if not subset:
+            continue
+        acc, abst = selective_success_rate(subset)
+        print(f"\n{condition.upper()}: n={len(subset)}")
+        print(f"  Selective success : {acc:.3f}")
+        print(f"  Abstention rate   : {abst:.3f}")
+        print(f"  Compound failures : {compound_failure_rate(subset):.3f}")
+
+
+if __name__ == "__main__":
+    main()

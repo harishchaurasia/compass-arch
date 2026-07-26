@@ -11,4 +11,5 @@ results/**/*.db
 results/*.db.bak-*
 results/*.log
 results/export_*.json
+scratch_*.log
 claude-session.txt
