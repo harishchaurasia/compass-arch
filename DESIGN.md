@@ -120,9 +120,9 @@ This represents the current production deployment baseline. Not a strawman — w
 - **Gemini 3-tier** (Google API) — frontier alternative
 - **Qwen 2.5 7B** (local on RTX 5080 via vLLM or Ollama) — open-source reference
 
-### Task suite (~52 tasks total)
+### Task suite (196 tasks as built)
 
-**τ-bench subset — 40 tasks.** Balanced retail + airline domains. Used as the academic anchor: results are directly comparable to AUQ and HTC paper evaluations. We subsample (don't run all 165) for budget and statistical sufficiency.
+**τ-bench: 165 real tasks, both domains (as built).** The full **retail** split (115 tasks) is the academic anchor, run single-shot; results are comparable to AUQ and HTC paper evaluations. The full **airline** split (50 tasks, flights and reservations) was added post-plan as a second real domain to test cross-domain generalization (FINDINGS §9). Both are vendored verbatim from upstream τ-bench at a pinned revision via `scripts/vendor_tau_bench.py`; grading replays the ground-truth actions and diffs final DB state (orders for retail, reservations for airline). _The original plan subsampled to ~40 tasks for budget; the full splits proved affordable, so that is what actually ran._
 
 **Custom MCP suite - 31 tasks** (as built; started at ~12). Runs on a purpose-built filesystem MCP server (real JSON-RPC over stdio) so grading is deterministic (reset-and-diff a seeded config-store world), and the same bridge also drives real off-the-shelf servers (official filesystem + GitHub) unchanged. Tasks are _deliberately designed_ to have cascading-failure potential: an early misidentification leads the agent to destroy the _wrong_ file. This is the production-grounding half of the eval and the source of the demo video.
 
@@ -135,7 +135,7 @@ The custom MCP task design happens _after_ Phase 1 pilot reveals what failure pa
 
 ### Trial matrix
 
-~52 tasks × 4 models × 2 conditions = **~416 trials**
+Planned: ~52 tasks × 4 models × 2 conditions = **~416 trials**. As built, the full splits plus the Phase 4 compass variants (shrinkage, no-verification, `T_HIGH` sweep) grew this to **~3,000 trials** in `results/trials.db` (1,725 retail + 550 airline + 620 MCP).
 
 API cost estimate: $150–$300 total across the project.
 
@@ -194,7 +194,7 @@ compass/
 │   ├── mcp_runner.py
 │   └── metrics.py                       # ECE, Brier, selective accuracy, compound failure
 ├── tasks/                                # task definitions
-│   ├── tau_bench/                       # subset of τ-bench
+│   ├── tau_bench/                       # τ-bench retail (115) + airline (50), vendored
 │   └── custom_mcp/                      # 31 custom MCP tasks
 ├── results/
 │   └── trials.db                        # SQLite of every trial

@@ -4,9 +4,10 @@ A `find → diagnose → intervene → measure` arc across four models: a fronti
 (`gpt-4o-mini`) and three local models via Ollama (`qwen2.5:7b`, `qwen2.5:14b`,
 `llama3.1:8b`), temperature 0. §0-5 are the τ-bench retail single-shot suite (115
 tasks); §6 is the cross-domain MCP filesystem suite (31 tasks); §7 is the verification
-ablation and §8 the `T_HIGH` sweep. The short version: Compass reduces destructive
-failures, but on the weak models it does so by *abstaining broadly* rather than by
-gating precisely, and §3/§7/§8 are the honest accounting of exactly how.
+ablation, §8 the `T_HIGH` sweep, and §9 a second real τ-bench domain (airline, 50 tasks).
+The short version: Compass reduces destructive failures, but on the weak models it does so
+by *abstaining broadly* rather than by gating precisely, and §3/§7/§8 are the honest
+accounting of exactly how.
 
 Compound failure here means the agent took a destructive, irreversible action while
 wrong (mutated a real order it should not have).
@@ -26,6 +27,9 @@ and what the base-rate prior actually does about it. All three local models reac
 failure under shrinkage - but §3 shows that "0%" is a categorical block on high-risk
 execution, not a calibrated gate, and §7 (the verification ablation) and §8 (the T_HIGH
 sweep) locate where the safety really comes from. Read those before quoting the 0%.
+§9 then confirms the whole pattern holds on a second real τ-bench domain (airline): baseline
+Compass again helps the frontier model and *worsens* qwen2.5:14b, and shrinkage again zeroes
+compound by the same categorical block.
 
 ## 0. Frontier baseline: on gpt-4o-mini, Compass works out of the box
 
@@ -267,6 +271,55 @@ finely ranking good actions above bad ones. Raising that discrimination is the r
 open problem; a threshold or a shrinkage constant cannot manufacture signal that the
 score does not carry.
 
+## 9. Second real domain: τ-bench airline (50 tasks)
+
+§6 changed the *substrate* (MCP filesystem) to check the retail finding wasn't
+benchmark-specific. This section changes the *domain* while staying on real τ-bench: the
+**airline** suite (50 tasks, flights and reservations), vendored verbatim from the same
+upstream at the same pinned revision. Here the irreversible actions are bookings,
+cancellations, and reservation edits; grading replays the ground-truth actions and diffs
+the reservation + user state, exactly like the retail order check. Compound failure, all
+four models:
+
+| Model (airline, n=50) | Compound: Vanilla → Compass → +Shrink | Selective success: Vanilla → Compass | Compass abstain |
+|---|---|---|---|
+| gpt-4o-mini | 78% → **28%** → (n/a) | 6.0% → 31.8% | 56% |
+| qwen2.5:14b | 28% → 42% → **0%**    | 22.0% → 20.6% | 32% |
+| qwen2.5:7b  | 24% → 24% → **0%**    | 20.0% → 27.3% | 34% |
+| llama3.1:8b | 6% → **0%** → **0%**  | 34.0% → 38.8% | 2% |
+
+Airline reproduces every load-bearing claim from the retail arc, on a second real domain:
+
+1. **The frontier model needs the gate most here, and it works - but by abstention, not
+   discrimination.** Unaided, gpt-4o-mini destroys the *wrong* reservation on **78%** of
+   tasks (every booking is irreversible, so overacting is punished hard). Baseline Compass
+   cuts that to 28% and lifts task success 6% → 34%. But this time its verbalized confidence
+   is as miscalibrated as the local models' (ECE 0.62, mean confidence 0.96) - unlike retail,
+   where its confidence carried signal (§0). So the 28% is bought with **56% abstention** and
+   trajectory decay, not an honest early score, and 28% is **not zero**: 14 of 50
+   confident-wrong bookings still clear the gate. Same model, different domain, different
+   failure mode.
+
+2. **qwen2.5:14b gets worse under baseline Compass again** (28% → 42%), the exact regression
+   from §1. That it recurs on a different real domain is the confirmation that §2's diagnosis
+   is a property of the model, not the retail suite: flat ~1.0 confidence leaves the first
+   high-risk action ungated, and the persistent agent takes more destructive steps than timid
+   vanilla. qwen2.5:7b is unmoved (24% → 24%).
+
+3. **Shrinkage drives compound to 0% on all three local models**, by the §3 categorical block
+   - the 0.75 ceiling sits under `T_HIGH = 0.8`, so no booking or cancellation ever executes.
+   The cost is **50-76% abstention** on the Qwens, and shrinkage again posts the *highest*
+   task success (38% on both Qwens), because on airline not-acting is frequently the correct
+   move.
+
+4. **llama3.1:8b is the mirror image of its MCP collapse.** On MCP it degenerated to 96.8%
+   abstention for 0% selective success (§6). On airline it is the best-behaved model on the
+   board: it rarely destroys anything unaided (6%), Compass cleans the rest to 0% at just **2%
+   abstention**, and selective success actually rises (34% → 38.8%). The timidity that made it
+   useless on MCP makes the gate nearly free here. The failure mode is domain-specific, which
+   is the strongest single argument in this document against any one-line "Compass does X"
+   claim.
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -283,9 +336,11 @@ model's failure mode, and the four models span the range:
   gating intelligently. The same block drives both models to 0%, so it is at least not
   a per-model tuning artefact - it is the same blunt switch.
 - **When the model is already timid** (llama3.1:8b), it rarely acts destructively on
-  retail, so there is little to gate. But on the harder MCP suite the same timidity
-  makes Compass abstain on 96.8% of tasks for 0% selective success (§6) - safe and
-  useless. There is no regime where Compass makes llama both safe and productive here.
+  retail, so there is little to gate. On the harder MCP suite the same timidity makes
+  Compass abstain on 96.8% of tasks for 0% selective success (§6) - safe and useless. But
+  on airline that same timidity is a *virtue*: 6% baseline compound, cleaned to 0% at only
+  2% abstention with selective success rising (§9). Whether Compass makes llama both safe
+  and productive is entirely domain-dependent - not on MCP, yes on airline.
 
 Safety costs coverage in every regime, and the honest accounting is blunter than the
 headline: on the weak models the "0% compound" is bought by refusing high-risk
@@ -308,6 +363,9 @@ uv run python scripts/run_tau_eval.py --provider openai --model gpt-4o-mini
 # weak-model shrinkage variant
 uv run python scripts/run_tau_eval.py --provider ollama \
   --model qwen2.5:14b --calibration shrinkage --conditions compass
+# second real τ-bench domain: airline, 50 tasks (§9)
+uv run python scripts/run_airline_eval.py --provider openai --model gpt-4o-mini
+uv run python scripts/run_airline_eval.py --provider ollama --model qwen2.5:14b
 # cross-domain: custom filesystem MCP suite, 31 tasks (Phase 3)
 uv run python scripts/run_mcp_eval.py --provider ollama --model qwen2.5:14b
 uv run python scripts/run_mcp_eval.py --provider openai --model gpt-4o-mini  # the boundary case
