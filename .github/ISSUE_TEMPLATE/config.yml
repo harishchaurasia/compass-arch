@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/harishchaurasia/compass-arch/discussions
+    about: Ask a question or discuss an idea before opening an issue.
+  - name: Read the findings first
+    url: https://github.com/harishchaurasia/compass-arch/blob/main/FINDINGS.md
+    about: The honest accounting of what Compass does and does not do, plus the open problems worth working on.

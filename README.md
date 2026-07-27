@@ -15,7 +15,7 @@ Same model, same tools. It just refuses to act when its confidence isn't earned.
 ![python](https://img.shields.io/badge/python-3.11+-2f81f7)
 [![license](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
 
-[Before / After](#before--after) · [How it works](#how-it-works) · [Results](#results) · [MCP](#cross-domain-a-real-mcp-server) · [Install](#install) · [Findings](FINDINGS.md) · [Design](DESIGN.md)
+[Before / After](#before--after) · [How it works](#how-it-works) · [Use it](#use-it-on-your-own-agent) · [Results](#results) · [Leaderboard](LEADERBOARD.md) · [Install](#install) · [Findings](FINDINGS.md) · [Design](DESIGN.md)
 
 </div>
 
@@ -77,6 +77,30 @@ CompassStep (reasoning · action · confidence · risk)
   → calibration          (confidence + trajectory → success probability)
   → policy               (EXECUTE / SELF_VERIFY / ABSTAIN, conditioned on risk)
 ```
+
+## Use it on your own agent
+
+The whole integration is: bring your tools, tag the destructive ones, build a gated
+agent, run it. No LangGraph internals, no second model.
+
+```python
+from compass import get_model, build_compass_agent, run
+
+agent = build_compass_agent(
+    get_model("openai", "gpt-4o-mini"),   # or ("ollama", "qwen2.5:7b") - no API key
+    tools=my_tools,                       # any LangChain tools
+    tool_risk={"delete_file": "high", "list_files": "low"},  # gate the destructive ones
+)
+
+result = run(agent, "clean up the old backups")
+if result.abstained:
+    # Compass refused a high-risk action it couldn't justify - hand off to a human.
+    ...
+```
+
+Runnable end-to-end in [`examples/gate_your_agent.py`](examples/gate_your_agent.py)
+(`uv run python examples/gate_your_agent.py`). The same bridge also drives real
+off-the-shelf MCP servers unchanged (see [MCP](#cross-domain-a-real-mcp-server)).
 
 ## Results
 
@@ -173,6 +197,18 @@ The same bridge drives real off-the-shelf servers unchanged - the official files
 uv run python scripts/mcp_real_servers.py --github
 ```
 
+## Leaderboard
+
+Every model's numbers across all three suites live in **[LEADERBOARD.md](LEADERBOARD.md)**,
+generated straight from the trial database. It ranks by lowest compound failure,
+tie-broken by **selective success** - so reaching 0% by refusing everything loses to
+reaching 0% while still getting work done. (On airline, that puts `llama3.1:8b` first at
+2% abstention and buries it last on MCP at 97%.)
+
+**Add your model:** run a suite, `uv run python scripts/leaderboard.py`, and PR the
+updated file. The raw `trials.db` stays local; only the distilled board is committed.
+See [CONTRIBUTING.md](CONTRIBUTING.md#good-first-contributions).
+
 ## Install
 
 ```bash
@@ -211,6 +247,7 @@ Built in the open, heading toward production - not there yet.
 - ✅ **Filesystem MCP** suite (31 tasks, real stdio server); reproduces cross-domain, with `gpt-4o-mini` marking the boundary
 - ✅ Verification ablation + `T_HIGH` sweep locate where the safety actually comes from ([FINDINGS.md](FINDINGS.md) §7-8)
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)
+- ✅ One-call public API (`compass.run`) + runnable example, and a regenerable [leaderboard](LEADERBOARD.md) anyone can PR a model into
 - 🔜 Recover the coverage that caution costs with an earlier, higher-discrimination signal
 
 ## Development

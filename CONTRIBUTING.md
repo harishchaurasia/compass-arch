@@ -15,6 +15,27 @@ uv run ruff check .     # lint
 
 Python 3.11+. No build step; `compass` is a pure editable package.
 
+## Good first contributions
+
+Ranked roughly by effort. The first two need only a machine that can run Ollama.
+
+1. **Put a new model on the [leaderboard](LEADERBOARD.md).** Run any suite with
+   `--provider ollama --model <id>`, regenerate with
+   `uv run python scripts/leaderboard.py`, and PR the updated `LEADERBOARD.md`.
+   Open an issue with the "Add a model to the leaderboard" template first if you
+   want a hand. The raw `trials.db` stays local; only the board is committed.
+2. **Gate your own agent and report friction.** `examples/gate_your_agent.py` is the
+   whole integration surface (`build_compass_agent` + `run`). If wrapping your tools
+   was awkward, that is a docs/API bug worth an issue.
+3. **Run the §7 ablation or §8 `T_HIGH` sweep on airline.** Retail and MCP have them;
+   airline does not yet. `scripts/run_airline_eval.py` already accepts
+   `--no-verification` and `--t-high`, so this is running and writing up, not coding.
+4. **Attack the real open problem (§8): an earlier, higher-discrimination signal.**
+   Pooled discrimination AUC is ≈ 0.53 - the gate works by abstaining broadly, not by
+   ranking good actions above bad. Precondition checks in `trajectory.py` before a
+   high-risk action are the sketch. This is the Phase 4 work that would make Compass
+   more than a caution switch.
+
 ## Before opening a PR
 
 1. `uv run pytest` is green.
