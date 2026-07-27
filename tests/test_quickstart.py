@@ -46,6 +46,8 @@ def test_run_maps_state_to_result():
     assert result.confidences == [0.9, 0.8]
     # success_probs are the calibrated gate values, one per step
     assert len(result.success_probs) == 2
+    # per-step effective risk is surfaced for inspection
+    assert result.risk_levels == ["high", "low"]
 
 
 def test_run_reports_abstention():

@@ -1,0 +1,31 @@
+# Changelog
+
+All notable changes to this project are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project is pre-1.0,
+so the public API may still change between minor versions.
+
+## [Unreleased]
+
+### Added
+- **Public API.** `from compass import get_model, build_compass_agent, run` - a one-call
+  entry point (`compass.run`) that gates your own LangChain tools without touching the
+  LangGraph state. Runnable end-to-end in `examples/gate_your_agent.py`.
+- **Second real domain.** The full τ-bench **airline** split (50 tasks) alongside retail,
+  vendored from upstream. `run_airline_eval.py` plus a domain-parametric `run_trial`.
+- **Leaderboard.** `LEADERBOARD.md`, generated from the trial DB by `scripts/leaderboard.py`
+  and kept in sync by CI against a committed aggregate snapshot (`results/leaderboard_data.json`).
+- **Observability.** Gate decisions and abstentions log on the `compass` logger
+  (`logging.getLogger("compass")`), silent by default. `GateResult` now also reports
+  per-step `risk_levels`.
+- **Contribution scaffolding.** Issue/PR templates and a "Good first contributions" ladder.
+- Typing marker (`compass/py.typed`, PEP 561) so downstream users get types.
+
+### Changed
+- CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.
+- Vanilla baseline tolerates tools that raise (`ToolNode(handle_tool_errors=True)`), so a
+  single malformed call no longer aborts a trial.
+
+### Known limitations
+- The gate discriminates weakly (pooled AUC ~0.53); its safety comes largely from broad
+  abstention, not from ranking good actions above bad. See `FINDINGS.md`. This is the primary
+  reason Compass is not yet a production safety component.

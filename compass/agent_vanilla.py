@@ -26,7 +26,11 @@ def build_vanilla_agent(
     """policy, when given, is prepended as a system message (e.g. the τ-bench
     retail policy wiki that graded behaviour depends on)."""
     model_with_tools = model.bind_tools(tools)
-    tool_node = ToolNode(tools)
+    # handle_tool_errors turns a tool that raises (e.g. a KeyError on a malformed
+    # arg) into an error observation the model can recover from, instead of
+    # aborting the whole trial. The Compass agent's execute node already does this;
+    # this keeps the baseline from losing a data point to a single bad call.
+    tool_node = ToolNode(tools, handle_tool_errors=True)
     system = [SystemMessage(content=policy)] if policy else []
 
     def call_model(state: VanillaState) -> dict:

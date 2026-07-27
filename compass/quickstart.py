@@ -41,6 +41,7 @@ class GateResult:
     steps: int
     confidences: list[float] = field(default_factory=list)
     success_probs: list[float] = field(default_factory=list)
+    risk_levels: list[str] = field(default_factory=list)
 
 
 def run(agent, instruction: str, *, calibration_shrink: bool = False) -> GateResult:
@@ -75,4 +76,5 @@ def run(agent, instruction: str, *, calibration_shrink: bool = False) -> GateRes
         steps=len(steps),
         confidences=confidences,
         success_probs=success_probs,
+        risk_levels=[s.risk_level for s in steps if hasattr(s, "risk_level")],
     )

@@ -1,5 +1,6 @@
 """Compass calibrated agent: structured output + trajectory features + action policy."""
 import json
+import logging
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -12,6 +13,11 @@ from compass.calibration import calibrate
 from compass.policy import PolicyDecision, decide, max_risk
 from compass.schemas import CompassAction, CompassStep  # noqa: F401 — re-exported for callers
 from compass.trajectory import extract_features
+
+# Decisions are logged on the "compass" logger so a caller can watch the gate at
+# runtime: logging.getLogger("compass").setLevel(logging.DEBUG). Silent by default
+# (no handler), so importing Compass never emits output on its own.
+_log = logging.getLogger("compass")
 
 MAX_SELF_VERIFY = 2  # consecutive SELF_VERIFYs before escalating to ABSTAIN
 MAX_PARSE_RETRIES = 2  # extra plan() attempts with a corrective nudge before giving up
@@ -209,6 +215,11 @@ def build_compass_agent(
         success_prob = calibrate(step.confidence, features, shrink=calibration_shrink)
         risk = _effective_risk(step)
         decision = decide(success_prob, risk)
+        _log.debug(
+            "step %d: tool=%s risk=%s conf=%.2f success_prob=%.2f -> %s",
+            len(state["steps"]), step.action.tool, risk, step.confidence,
+            success_prob, decision.value,
+        )
         if not verification:
             # Ablation: no SELF_VERIFY, no confirm pass. Whatever the policy
             # does not abstain on gets executed immediately, so any remaining
@@ -287,6 +298,10 @@ def build_compass_agent(
         risk = _effective_risk(step) if step.action.tool else step.risk_level
         success_prob = calibrate(
             step.confidence, extract_features(state["steps"]), shrink=calibration_shrink
+        )
+        _log.info(
+            "ABSTAIN at step %d: tool=%s risk=%s success_prob=%.2f (conf %.2f)",
+            len(state["steps"]), step.action.tool, risk, success_prob, step.confidence,
         )
         msg = AIMessage(content=(
             f"ABSTAINING: calibrated success probability {success_prob:.2f} "
