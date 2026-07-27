@@ -206,7 +206,8 @@ reaching 0% while still getting work done. (On airline, that puts `llama3.1:8b` 
 2% abstention and buries it last on MCP at 97%.)
 
 **Add your model:** run a suite, `uv run python scripts/leaderboard.py`, and PR the
-updated file. The raw `trials.db` stays local; only the distilled board is committed.
+updated board plus its `results/leaderboard_data.json` snapshot (CI checks they stay in
+sync). The raw `trials.db` stays local; only the distilled aggregates are committed.
 See [CONTRIBUTING.md](CONTRIBUTING.md#good-first-contributions).
 
 ## Install

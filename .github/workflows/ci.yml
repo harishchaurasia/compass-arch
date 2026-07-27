@@ -28,3 +28,6 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q
+
+      - name: Leaderboard in sync
+        run: uv run python scripts/leaderboard.py --check

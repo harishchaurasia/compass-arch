@@ -15,8 +15,9 @@ A short description. Link the issue it closes (e.g. `Closes #12`).
 - [ ] No em dashes, no committed `results/trials.db` (it is gitignored)
 - [ ] If I changed the gate/aggregator, I did **not** tune thresholds on the eval set,
       and I updated FINDINGS/README if a reported number moved
-- [ ] If I added leaderboard numbers, I regenerated `LEADERBOARD.md` with
-      `uv run python scripts/leaderboard.py` (raw DB stays local)
+- [ ] If I added leaderboard numbers, I regenerated with
+      `uv run python scripts/leaderboard.py` and committed both `LEADERBOARD.md` and
+      `results/leaderboard_data.json` (raw DB stays local; CI checks they are in sync)
 
 ## Numbers moved? (if applicable)
 Which reported metrics changed, and where the new figures come from.

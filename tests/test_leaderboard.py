@@ -47,8 +47,17 @@ def test_ranking_prefers_low_compound_then_high_selective_success():
     for i in range(4):
         rows.append(_trial("B", "vanilla", False, False, ["x"]))
         rows.append(_trial("B", "compass", False, True, []))
-    # tag their task_ids so the airline-prefixed filter keeps them
-    table, count = leaderboard._suite_table(rows, "tau_airline_")
-    assert count == 2
-    # A (coverage kept) must rank above B (refuses everything)
-    assert table.index("`A`") < table.index("`B`")
+    entries = leaderboard.suite_entries(rows, "tau_airline_")
+    assert [e["model"] for e in entries] == ["A", "B"]  # coverage-keeper ranks first
+    assert entries[0]["best"] == 0.0 and entries[1]["best"] == 0.0  # both reach 0% compound
+
+
+def test_check_round_trips_from_snapshot():
+    # render(build_snapshot(rows)) must equal render(reloaded snapshot), so --check
+    # is a faithful re-render (this is what CI relies on).
+    rows = [_trial("A", "vanilla", False, False, ["x"]), _trial("A", "compass", True, False, [])]
+    snap = leaderboard.build_snapshot(rows)
+    import json
+
+    reloaded = json.loads(json.dumps(snap))  # simulate the JSON round-trip CI does
+    assert leaderboard.render(snap) == leaderboard.render(reloaded)

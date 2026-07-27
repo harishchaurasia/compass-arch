@@ -1,17 +1,27 @@
-"""Generate LEADERBOARD.md from results/trials.db.
+"""Generate (and CI-verify) LEADERBOARD.md.
 
-The raw trial DB is gitignored (never committed); this script distills it into a
-committed, regenerable summary. Re-run after adding a model and PR the updated
-LEADERBOARD.md:
+The raw trial DB is gitignored (never committed), so this script keeps two
+committed, derived artifacts in sync:
+
+  - LEADERBOARD.md              the human-readable board
+  - results/leaderboard_data.json  aggregate rates only (no raw trials), the
+                                source of truth CI re-renders from
+
+Regenerate from the local DB after a run, then commit both files:
 
     uv run python scripts/leaderboard.py
 
-Ranking within each suite is by lowest compound failure achieved under any Compass
-variant, tie-broken by *selective success* - so reaching 0% by refusing everything
-loses to reaching 0% while still getting work done. That is deliberate: the goal is
-safety without coverage collapse, and the board should reward it.
-"""
+CI (no DB present) re-renders the board from the committed snapshot and fails if
+LEADERBOARD.md drifted (hand-edited, or snapshot updated without regenerating):
 
+    uv run python scripts/leaderboard.py --check
+
+Ranking within a suite is by lowest compound failure achieved under any Compass
+variant, tie-broken by *selective success* - so reaching 0% by refusing everything
+loses to reaching 0% while still getting work done.
+"""
+import argparse
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -28,6 +38,7 @@ for _stream in (sys.stdout, sys.stderr):
 ROOT = Path(__file__).parent.parent
 DB_PATH = ROOT / "results" / "trials.db"
 OUT = ROOT / "LEADERBOARD.md"
+SNAPSHOT = ROOT / "results" / "leaderboard_data.json"
 
 SUITES = [
     ("τ-bench retail", "tau_retail_", 115),
@@ -46,7 +57,7 @@ def _base_model(model: str) -> str:
     return model
 
 
-def _pct(x: float | None) -> str:
+def _pct(x) -> str:
     return "n/a" if x is None else f"{x * 100:.0f}%"
 
 
@@ -58,22 +69,17 @@ def _cell(rows):
     return compound_failure_rate(rows), acc, abst
 
 
-def _suite_table(rows, prefix):
+def suite_entries(rows, prefix):
+    """Ranked list of per-model entry dicts for one suite (pure aggregates)."""
     suite_rows = [r for r in rows if r.task_id.startswith(prefix)]
     bases = sorted({_base_model(r.model) for r in suite_rows})
 
     entries = []
     for base in bases:
-        vanilla = [
-            r for r in suite_rows if r.model == base and r.condition == "vanilla"
-        ]
-        compass = [
-            r for r in suite_rows if r.model == base and r.condition == "compass"
-        ]
+        vanilla = [r for r in suite_rows if r.model == base and r.condition == "vanilla"]
+        compass = [r for r in suite_rows if r.model == base and r.condition == "compass"]
         shrink = [
-            r
-            for r in suite_rows
-            if r.model == f"{base}-shrink" and r.condition == "compass"
+            r for r in suite_rows if r.model == f"{base}-shrink" and r.condition == "compass"
         ]
         if not vanilla or not compass:
             continue  # need the baseline A/B to rank
@@ -87,25 +93,31 @@ def _suite_table(rows, prefix):
         candidates = [("compass", c_comp, c_sel, c_abst)]
         if s_comp is not None:
             candidates.append(("shrink", s_comp, s_sel, s_abst))
-        via, best, best_sel, best_abst = min(
-            candidates, key=lambda t: (t[1], -(t[2] or 0))
-        )
+        via, best, best_sel, best_abst = min(candidates, key=lambda t: (t[1], -(t[2] or 0)))
         entries.append(
             {
-                "model": base,
-                "v": v_comp,
-                "c": c_comp,
-                "s": s_comp,
-                "best": best,
-                "via": via,
-                "sel": best_sel,
-                "abst": best_abst,
+                "model": base, "v": v_comp, "c": c_comp, "s": s_comp,
+                "best": best, "via": via, "sel": best_sel, "abst": best_abst,
             }
         )
 
-    # lowest best-compound first; tie-break by higher selective success of that variant
     entries.sort(key=lambda e: (e["best"], -(e["sel"] or 0)))
+    return entries
 
+
+def build_snapshot(rows) -> dict:
+    """Everything needed to render the board, and nothing else (no raw trials)."""
+    return {
+        "generated": date.today().isoformat(),
+        "trials": len(rows),
+        "suites": [
+            {"title": title, "prefix": prefix, "n": n, "entries": suite_entries(rows, prefix)}
+            for title, prefix, n in SUITES
+        ],
+    }
+
+
+def _table(entries) -> str:
     lines = [
         "| # | Model | Vanilla | Compass | +Shrink | Best | via | sel-succ | abstain |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -115,21 +127,18 @@ def _suite_table(rows, prefix):
             f"| {i} | `{e['model']}` | {_pct(e['v'])} | {_pct(e['c'])} | {_pct(e['s'])} "
             f"| **{_pct(e['best'])}** | {e['via']} | {_pct(e['sel'])} | {_pct(e['abst'])} |"
         )
-    return "\n".join(lines), len(entries)
+    return "\n".join(lines)
 
 
-def main() -> None:
-    if not DB_PATH.exists():
-        sys.exit(f"No DB at {DB_PATH}. Run a suite first (see README Reproduce).")
-    rows = load_trials(DB_PATH)
-
+def render(snapshot: dict) -> str:
     parts = [
         "# Compass Leaderboard",
         "",
         "<!-- Auto-generated by scripts/leaderboard.py from results/trials.db. "
-        "Do not edit by hand; re-run the script and commit the result. -->",
+        "Do not edit by hand; re-run the script and commit LEADERBOARD.md + "
+        "results/leaderboard_data.json together. CI verifies they stay in sync. -->",
         "",
-        f"_Generated {date.today().isoformat()} from {len(rows)} trials._",
+        f"_Generated {snapshot['generated']} from {snapshot['trials']} trials._",
         "",
         "**Compound failure** = the agent took a destructive, irreversible action while "
         "wrong (lower is better). Compass's reductions frequently come from **abstaining**, "
@@ -139,10 +148,9 @@ def main() -> None:
         "(work actually completed). Read [FINDINGS.md](FINDINGS.md) before quoting a number.",
         "",
     ]
-    for title, prefix, n in SUITES:
-        table, count = _suite_table(rows, prefix)
-        parts += [f"## {title} ({n} tasks)", ""]
-        parts += [table if count else "_No runs yet._", ""]
+    for suite in snapshot["suites"]:
+        parts += [f"## {suite['title']} ({suite['n']} tasks)", ""]
+        parts += [_table(suite["entries"]) if suite["entries"] else "_No runs yet._", ""]
 
     parts += [
         "## Add your model",
@@ -153,12 +161,44 @@ def main() -> None:
         "   uv run python scripts/run_airline_eval.py --provider ollama --model <your-model>",
         "   uv run python scripts/run_mcp_eval.py --provider ollama --model <your-model>",
         "   ```",
-        "2. Regenerate this file: `uv run python scripts/leaderboard.py`",
-        "3. Open a PR with the updated `LEADERBOARD.md` (the raw `trials.db` stays local).",
+        "2. Regenerate: `uv run python scripts/leaderboard.py` (updates the board and the "
+        "snapshot).",
+        "3. PR both `LEADERBOARD.md` and `results/leaderboard_data.json` (the raw `trials.db` "
+        "stays local).",
         "",
     ]
-    OUT.write_text("\n".join(parts), encoding="utf-8")
-    print(f"Wrote {OUT.relative_to(ROOT)} ({len(rows)} trials)")
+    return "\n".join(parts)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--check", action="store_true",
+        help="CI mode: re-render from the committed snapshot and fail if "
+             "LEADERBOARD.md is out of sync. Needs no database.",
+    )
+    args = parser.parse_args()
+
+    if args.check:
+        if not SNAPSHOT.exists():
+            sys.exit(f"No snapshot at {SNAPSHOT.relative_to(ROOT)}; run leaderboard.py first.")
+        snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+        expected = render(snapshot)
+        actual = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
+        if actual != expected:
+            sys.exit(
+                "LEADERBOARD.md is out of sync with results/leaderboard_data.json.\n"
+                "Regenerate and commit both: uv run python scripts/leaderboard.py"
+            )
+        print("LEADERBOARD.md is in sync with its snapshot.")
+        return
+
+    if not DB_PATH.exists():
+        sys.exit(f"No DB at {DB_PATH}. Run a suite first (see README Reproduce).")
+    snapshot = build_snapshot(load_trials(DB_PATH))
+    SNAPSHOT.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
+    OUT.write_text(render(snapshot), encoding="utf-8")
+    print(f"Wrote {OUT.name} + {SNAPSHOT.name} ({snapshot['trials']} trials)")
 
 
 if __name__ == "__main__":

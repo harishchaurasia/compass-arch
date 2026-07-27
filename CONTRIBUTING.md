@@ -21,9 +21,10 @@ Ranked roughly by effort. The first two need only a machine that can run Ollama.
 
 1. **Put a new model on the [leaderboard](LEADERBOARD.md).** Run any suite with
    `--provider ollama --model <id>`, regenerate with
-   `uv run python scripts/leaderboard.py`, and PR the updated `LEADERBOARD.md`.
+   `uv run python scripts/leaderboard.py`, and PR the updated `LEADERBOARD.md`
+   **and** its `results/leaderboard_data.json` snapshot (CI fails if they drift).
    Open an issue with the "Add a model to the leaderboard" template first if you
-   want a hand. The raw `trials.db` stays local; only the board is committed.
+   want a hand. The raw `trials.db` stays local; only the aggregates are committed.
 2. **Gate your own agent and report friction.** `examples/gate_your_agent.py` is the
    whole integration surface (`build_compass_agent` + `run`). If wrapping your tools
    was awkward, that is a docs/API bug worth an issue.
