@@ -4,8 +4,9 @@ A `find → diagnose → intervene → measure` arc across four models: a fronti
 (`gpt-4o-mini`) and three local models via Ollama (`qwen2.5:7b`, `qwen2.5:14b`,
 `llama3.1:8b`), temperature 0. §0-5 are the τ-bench retail single-shot suite (115
 tasks); §6 is the cross-domain MCP filesystem suite (31 tasks); §7 is the verification
-ablation, §8 the `T_HIGH` sweep, §9 a second real τ-bench domain (airline, 50 tasks), and
-§10 a from-the-traces test of the "precondition check" fix for the discrimination gap.
+ablation, §8 the `T_HIGH` sweep, §9 a second real τ-bench domain (airline, 50 tasks), §10 a
+from-the-traces test of the "precondition check" fix for the discrimination gap, and §11 a
+first learned-probe attack on it with a semantic action-vs-request signal.
 The short version: Compass reduces destructive failures, but on the weak models it does so
 by *abstaining broadly* rather than by gating precisely, and §3/§7/§8 are the honest
 accounting of exactly how.
@@ -370,6 +371,58 @@ away.
 uv run python analysis/discrimination.py   # reproduces both tables, from traces only
 ```
 
+## 11. The lever that is left: a semantic action-vs-request match
+
+§10 left exactly one candidate standing - a signal for whether a high-risk action
+matches what the user actually asked for, since the failure is a semantically wrong
+action on a correctly-grounded target. This section tests a **zero-dependency lexical
+proxy** for that match, again from the committed traces: TF-IDF cosine affinity between
+the original request and (a) the observation that describes the entity the action
+targets, (b) the action's own reasoning + args, and (c) the weakest-justified argument
+(`analysis/semantic_probe.py`). Then a hand-rolled logistic regression combines those
+with the step-time confidence and trajectory features, scored by **held-out**
+cross-validation (`analysis/learned_probe.py`).
+
+The single features are not a robust gate - they carry strong signal in one cell and
+mislead in others. `min_arg_justif` scores AUC **0.889** at separating clean from
+compound on gpt-4o-mini retail, but sits at or below chance on the Qwens and across all
+of airline, where long requests share generic airport/cabin vocabulary with any
+reservation. No lexical feature discriminates on its own everywhere.
+
+The learned combination is the honest test, on the 220 trials that actually take a
+high-risk action (88 compound), out-of-fold, averaged over 25 seeds:
+
+| Held-out AUC (clean > compound) | Pooled | Retail | Airline |
+|---|---|---|---|
+| Shipped rule-based gate (mean success_prob) | 0.499 | 0.399 | **0.604** |
+| Learned probe: confidence + trajectory only | 0.548 | 0.432 | 0.366 |
+| Learned probe: **+ semantic affinities** | **0.606** | **0.537** | 0.542 |
+
+Three honest reads. First, the semantic affinities do add **real held-out signal**: on
+retail they lift the probe from below-chance (0.43) to 0.54, and on the high-risk subset
+the shipped rule-based gate is itself only 0.399 there - so 0.40 → 0.54 out-of-fold is
+the first within-domain gain anything has shown over the shipped score, and it confirms
+§10's diagnosis that the lever is semantic, not structural. Second, it is **not a solved
+gate**: 0.54 within-domain is weak, and on airline the shipped rule (0.604) still beats
+the probe (0.542) because the lexical proxy is too crude there. Third, do not be fooled
+by the pooled column - the trajectory-only probe reaches 0.548 pooled while scoring
+*below* chance in both domains, because the domain dummy lets it exploit the different
+compound base rates; only the affinity probe clears chance *within* each domain, which is
+the number that would matter to a real gate.
+
+So the direction §10 pointed at is correct and now has held-out evidence behind it, but a
+lexical stand-in under-delivers as an implementation. The pipeline is **unchanged** - a
+0.54 within-domain probe that loses to the shipped rule on one domain has not earned a
+place in the locked aggregator. The next rung is a genuine semantic signal (local
+sentence embeddings, or an LLM-as-judge action-vs-request check) in place of TF-IDF; this
+section is the evidence that it is worth the model call, and the harness
+(`analysis/learned_probe.py`) to measure whether it pays off.
+
+```bash
+uv run python analysis/semantic_probe.py   # univariate affinity AUCs, per model/domain
+uv run python analysis/learned_probe.py    # held-out CV: does the combination beat 0.53?
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -404,8 +457,10 @@ buying safety with blanket refusal - and §10 narrows what that signal can be: t
 structural fix (precondition checks - target/destination grounding, read-before-write)
 was tested against the traces and does **not** discriminate, because the failure mode is a
 semantically wrong action on a correctly-grounded target. What is left is a semantic match
-between the proposed action and the user's actual request - the learned probe DESIGN.md
-parks as a stretch, now the only lever still standing.
+between the proposed action and the user's actual request - and §11 takes the first honest
+swing at it: a lexical proxy for that match adds real held-out signal on retail (0.40 →
+0.54) but is too crude to beat the shipped rule everywhere, so the learned semantic probe
+is the right direction with a genuine embedding or LLM-judge signal, not TF-IDF.
 
 ## Reproduce
 

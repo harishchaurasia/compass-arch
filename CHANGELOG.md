@@ -24,6 +24,12 @@ so the public API may still change between minor versions.
   don't - target/destination grounding and read-before-write score at chance on both real
   domains (`FINDINGS.md` §10). Documents *why* (the failure is a semantically wrong action
   on a correctly-grounded target) and narrows the roadmap to the learned semantic probe.
+- **Learned semantic probe (offline).** `analysis/semantic_probe.py` + `analysis/learned_probe.py`
+  build a zero-dependency lexical proxy for an action-vs-request match and score a
+  hand-rolled logistic regression by held-out cross-validation. The semantic features add
+  real out-of-fold discrimination on retail (0.40 → 0.54 AUC) but a lexical proxy is too
+  crude to beat the shipped rule on airline (`FINDINGS.md` §11). Direction confirmed;
+  pipeline left unchanged pending a genuine embedding/LLM-judge signal.
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.

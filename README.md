@@ -250,7 +250,8 @@ Built in the open, heading toward production - not there yet.
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)
 - ✅ One-call public API (`compass.run`) + runnable example, and a regenerable [leaderboard](LEADERBOARD.md) anyone can PR a model into
 - ✅ Ruled out the cheap discrimination fix: structural **precondition checks** (target/destination grounding, read-before-write) score at chance from the traces ([FINDINGS.md](FINDINGS.md) §10) - the failure is a semantically wrong action on a correctly-grounded target
-- 🔜 Recover the coverage that caution costs with a **semantic** action-vs-request match (the learned probe) - now the only lever left standing
+- ✅ First **learned probe** with a semantic action-vs-request signal: a lexical proxy adds real held-out discrimination on retail (**0.40 → 0.54** AUC, §11) but is too crude to beat the shipped rule on airline - direction confirmed, TF-IDF insufficient
+- 🔜 Swap the lexical proxy for a genuine semantic signal (local embeddings or an LLM-judge) and re-measure with the same held-out harness (`analysis/learned_probe.py`)
 
 ## Development
 
