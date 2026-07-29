@@ -72,7 +72,7 @@ Per-step verbalized confidence alone is unreliable. RLHF-trained frontier models
 
 These features are computed in real time at each decision point. A rule-based aggregator combines them with verbalized confidence into a single **trajectory success probability**.
 
-The aggregator is hand-tuned on a small dev split (~5 tasks) and locked before evaluation. The methodology is reported honestly in the writeup. A learned calibration probe (small classifier on these features) is the Phase 4 stretch goal.
+The aggregator is hand-tuned on a small dev split (~5 tasks) and locked before evaluation. The methodology is reported honestly in the writeup. A learned calibration probe (small classifier on these features) is the Phase 4 stretch goal - and FINDINGS.md §10 now motivates it empirically: the cheaper structural alternative (precondition checks - target/destination grounding, read-before-write, computed from the traces in `analysis/discrimination.py`) scores at chance, because the compound-failure mode is a semantically wrong action on a correctly-grounded target. The remaining lever is a semantic action-vs-request match, which needs the probe.
 
 ### Component 3 — Confidence-conditioned action policy
 

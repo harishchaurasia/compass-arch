@@ -249,7 +249,8 @@ Built in the open, heading toward production - not there yet.
 - ✅ Verification ablation + `T_HIGH` sweep locate where the safety actually comes from ([FINDINGS.md](FINDINGS.md) §7-8)
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)
 - ✅ One-call public API (`compass.run`) + runnable example, and a regenerable [leaderboard](LEADERBOARD.md) anyone can PR a model into
-- 🔜 Recover the coverage that caution costs with an earlier, higher-discrimination signal
+- ✅ Ruled out the cheap discrimination fix: structural **precondition checks** (target/destination grounding, read-before-write) score at chance from the traces ([FINDINGS.md](FINDINGS.md) §10) - the failure is a semantically wrong action on a correctly-grounded target
+- 🔜 Recover the coverage that caution costs with a **semantic** action-vs-request match (the learned probe) - now the only lever left standing
 
 ## Development
 

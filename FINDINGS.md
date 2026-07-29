@@ -4,7 +4,8 @@ A `find → diagnose → intervene → measure` arc across four models: a fronti
 (`gpt-4o-mini`) and three local models via Ollama (`qwen2.5:7b`, `qwen2.5:14b`,
 `llama3.1:8b`), temperature 0. §0-5 are the τ-bench retail single-shot suite (115
 tasks); §6 is the cross-domain MCP filesystem suite (31 tasks); §7 is the verification
-ablation, §8 the `T_HIGH` sweep, and §9 a second real τ-bench domain (airline, 50 tasks).
+ablation, §8 the `T_HIGH` sweep, §9 a second real τ-bench domain (airline, 50 tasks), and
+§10 a from-the-traces test of the "precondition check" fix for the discrimination gap.
 The short version: Compass reduces destructive failures, but on the weak models it does so
 by *abstaining broadly* rather than by gating precisely, and §3/§7/§8 are the honest
 accounting of exactly how.
@@ -320,6 +321,55 @@ Airline reproduces every load-bearing claim from the retail arc, on a second rea
    is the strongest single argument in this document against any one-line "Compass does X"
    claim.
 
+## 10. Testing the "precondition check" hypothesis - a negative result
+
+Every section above ends at the same wall: the gate is safe by *abstaining broadly*,
+not by ranking good high-risk actions above bad ones (pooled discrimination AUC ≈ 0.53,
+§8). The standing hypothesis - written into this document's own roadmap and DESIGN.md -
+was that an *earlier, structural* signal would fix that: check a high-risk action's
+**preconditions** before it fires. Does the entity it targets actually exist in what the
+agent has seen? Is the destination it writes to something the environment offered? Did
+the agent read the entity before writing it? These are computable from the trajectory
+*at the moment of action*, before trajectory decay, so if they carried signal they would
+be exactly the early honest score the gate lacks.
+
+They do not. `analysis/discrimination.py` computes three such preconditions from the
+committed trial traces - **no new model calls** - and scores their discrimination against
+both trial success and the compound-failure (clean-vs-mutated) outcome, pooled across the
+four models on both real domains:
+
+| Signal (AUC vs clean-not-compound) | Retail (n=377) | Airline (n=200) |
+|---|---|---|
+| Shipped gate (mean calibrated success_prob) | 0.522 | 0.628 |
+| Target grounding (id seen in a prior observation?) | 0.482 | 0.478 |
+| Destination grounding (write-target offered by the env?) | 0.487 | 0.478 |
+| Read-before-write (entity read before it was written?) | 0.545 | 0.632 |
+
+Grounding is **at chance on both domains**, and the tell is sharper than the AUC: the
+compound-failure rate *given* an ungrounded high-risk action is **lower** than the base
+rate (4.8% vs 10.9% retail; 9.1% vs 23.5% airline). Acting on an id the agent never saw
+is, if anything, *less* dangerous. Read-before-write is the only precondition ever above
+chance, and it merely **ties** the shipped score (0.632 vs 0.628 on airline) while
+falling below chance on retail's llama - it re-encodes trajectory diligence the
+step-count penalty already captures, not new signal.
+
+The reason is diagnosable, and airline makes it vivid. gpt-4o-mini destroys the *wrong*
+reservation on 78% of unaided airline tasks (§9) - a textbook "wrong target" failure that
+grounding should catch. It doesn't, because the wrong reservation is almost always one
+the agent **did** observe: the user has several reservations, all surfaced, and the agent
+cancels the wrong grounded one. The compound-failure mode is not a hallucinated target;
+it is a **semantically wrong action on a correctly-grounded target**. No structural
+precondition can see that - separating "cancel reservation A" from "cancel reservation B"
+when both exist and both were observed requires modelling *which one the user asked for*,
+i.e. a semantic match between the action and the request. That is the learned-probe
+direction DESIGN.md flags as a Phase 4 stretch, and this section is the evidence that it
+is the *only* remaining lever - the cheap structural fix is now ruled out, not assumed
+away.
+
+```bash
+uv run python analysis/discrimination.py   # reproduces both tables, from traces only
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -348,10 +398,14 @@ execution outright (shrinkage) or by near-total abstention (llama), not by a sco
 tells good actions from bad - pooled discrimination AUC is ≈ 0.53 (§8). On a model that
 is already careful (gpt-4o-mini, §6) the coverage cost is paid with no safety benefit at
 all. "Zero" means zero destructive actions on these tasks *because the agent mostly
-stopped acting*, not a proof of calibrated safety. The real open problem (Phase 4+) is
-an *earlier, higher-discrimination* honest signal - precondition checks in the
-trajectory before a high-risk action - so the gate can keep coverage instead of buying
-safety with blanket refusal.
+stopped acting*, not a proof of calibrated safety. The real open problem (Phase 4+) is an
+*earlier, higher-discrimination* honest signal so the gate can keep coverage instead of
+buying safety with blanket refusal - and §10 narrows what that signal can be: the obvious
+structural fix (precondition checks - target/destination grounding, read-before-write)
+was tested against the traces and does **not** discriminate, because the failure mode is a
+semantically wrong action on a correctly-grounded target. What is left is a semantic match
+between the proposed action and the user's actual request - the learned probe DESIGN.md
+parks as a stretch, now the only lever still standing.
 
 ## Reproduce
 
@@ -378,4 +432,6 @@ uv run python scripts/run_mcp_eval.py --provider ollama --model qwen2.5:14b \
 # same bridge, real off-the-shelf servers (official filesystem + GitHub)
 uv run python scripts/mcp_real_servers.py            # official filesystem MCP
 uv run python scripts/mcp_real_servers.py --github   # GitHub MCP (needs a token in .env)
+# §10 precondition-check discrimination probe (from committed traces, no model calls)
+uv run python analysis/discrimination.py
 ```

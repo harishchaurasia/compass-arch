@@ -19,6 +19,11 @@ so the public API may still change between minor versions.
   per-step `risk_levels`.
 - **Contribution scaffolding.** Issue/PR templates and a "Good first contributions" ladder.
 - Typing marker (`compass/py.typed`, PEP 561) so downstream users get types.
+- **Discrimination probe.** `analysis/discrimination.py` tests, from the committed traces
+  (no model calls), whether structural precondition checks would fix the weak gate. They
+  don't - target/destination grounding and read-before-write score at chance on both real
+  domains (`FINDINGS.md` §10). Documents *why* (the failure is a semantically wrong action
+  on a correctly-grounded target) and narrows the roadmap to the learned semantic probe.
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.
