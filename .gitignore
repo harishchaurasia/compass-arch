@@ -13,3 +13,6 @@ results/*.log
 results/export_*.json
 scratch_*.log
 claude-session.txt
+
+# Cached sentence embeddings for the discrimination probe (regenerable)
+analysis/.embed_cache.json

@@ -411,16 +411,41 @@ compound base rates; only the affinity probe clears chance *within* each domain,
 the number that would matter to a real gate.
 
 So the direction §10 pointed at is correct and now has held-out evidence behind it, but a
-lexical stand-in under-delivers as an implementation. The pipeline is **unchanged** - a
-0.54 within-domain probe that loses to the shipped rule on one domain has not earned a
-place in the locked aggregator. The next rung is a genuine semantic signal (local
-sentence embeddings, or an LLM-as-judge action-vs-request check) in place of TF-IDF; this
-section is the evidence that it is worth the model call, and the harness
-(`analysis/learned_probe.py`) to measure whether it pays off.
+lexical stand-in under-delivers as an implementation. That left one question: is the 0.54
+ceiling the *idea* (a semantic match just doesn't carry enough signal) or the *proxy*
+(TF-IDF is too shallow to extract it)? To answer it, `analysis/embed_probe.py` swaps
+TF-IDF for genuine sentence embeddings (`nomic-embed-text` via a local Ollama server)
+behind the **identical** feature interface and CV harness - only the cosine backend
+changes, so any difference is the embedding, not the pipeline:
+
+| Held-out AUC (clean > compound), full probe | Pooled | Retail | Airline |
+|---|---|---|---|
+| Shipped rule-based gate | 0.499 | 0.399 | 0.604 |
+| Probe with **TF-IDF** affinities | 0.606 | 0.537 | 0.542 |
+| Probe with **embedding** affinities | **0.698** | **0.633** | **0.659** |
+
+It was the proxy. Real embeddings lift the probe to **0.633 retail / 0.659 airline**
+out-of-fold - the first signal in this entire document to beat the shipped rule-based gate
+on *both* real domains at once, and by a clear margin (retail 0.40 → 0.63, airline 0.60 →
+0.66). Because the base features are byte-identical between the two probe rows, the whole
+gain is attributable to the affinity features being embedding-based rather than lexical.
+One caveat kept honest: the *univariate* embedding affinities are still weak (target AUC
+~0.28, min-justification ~0.37) - the signal lives in the learned *combination*, so the
+claim is that the embedding representation lets the classifier extract a consistent
+multivariate signal, not that any single affinity feature is a good gate on its own.
+
+This is the first result that plausibly *earns* a place in the pipeline, and it is also
+where the honest cost shows up: it needs an embedding call per high-risk action at runtime
+and a probe fit on trajectory data, so wiring it in is a real Phase 4 change (behind a
+flag, with the aggregator staying locked as the default) - not a free win. The pipeline is
+still **unchanged** here by choice: this section establishes the result and the harness;
+productionizing it (a shipped probe + the live embedding call + cross-task generalization
+beyond this suite) is the next deliberate step, not a side effect of an analysis script.
 
 ```bash
-uv run python analysis/semantic_probe.py   # univariate affinity AUCs, per model/domain
-uv run python analysis/learned_probe.py    # held-out CV: does the combination beat 0.53?
+uv run python analysis/semantic_probe.py   # univariate TF-IDF affinity AUCs, per model/domain
+uv run python analysis/learned_probe.py    # held-out CV, TF-IDF backend: base vs +affinity
+uv run python analysis/embed_probe.py      # held-out CV, embedding backend (needs Ollama + nomic-embed-text)
 ```
 
 ## Takeaway
@@ -457,10 +482,13 @@ buying safety with blanket refusal - and §10 narrows what that signal can be: t
 structural fix (precondition checks - target/destination grounding, read-before-write)
 was tested against the traces and does **not** discriminate, because the failure mode is a
 semantically wrong action on a correctly-grounded target. What is left is a semantic match
-between the proposed action and the user's actual request - and §11 takes the first honest
-swing at it: a lexical proxy for that match adds real held-out signal on retail (0.40 →
-0.54) but is too crude to beat the shipped rule everywhere, so the learned semantic probe
-is the right direction with a genuine embedding or LLM-judge signal, not TF-IDF.
+between the proposed action and the user's actual request - and §11 lands it: a lexical
+proxy adds real held-out signal on retail (0.40 → 0.54) but is too crude to beat the
+shipped rule everywhere, whereas swapping in genuine sentence embeddings lifts a held-out
+probe to **0.63 retail / 0.66 airline** - the first signal to beat the shipped gate on
+both real domains at once. The learned semantic probe is no longer a hypothesis; it is the
+first thing that has earned a path into the pipeline, at the cost of a runtime embedding
+call and a Phase 4 productionization behind a flag.
 
 ## Reproduce
 

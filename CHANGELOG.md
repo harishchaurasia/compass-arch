@@ -28,8 +28,13 @@ so the public API may still change between minor versions.
   build a zero-dependency lexical proxy for an action-vs-request match and score a
   hand-rolled logistic regression by held-out cross-validation. The semantic features add
   real out-of-fold discrimination on retail (0.40 → 0.54 AUC) but a lexical proxy is too
-  crude to beat the shipped rule on airline (`FINDINGS.md` §11). Direction confirmed;
-  pipeline left unchanged pending a genuine embedding/LLM-judge signal.
+  crude to beat the shipped rule on airline (`FINDINGS.md` §11).
+- **Embedding backend closes it.** `analysis/embed_probe.py` swaps TF-IDF for
+  `nomic-embed-text` sentence embeddings (local Ollama) behind the same feature interface
+  and CV harness; held-out AUC rises to 0.63 retail / 0.66 airline - the first signal to
+  beat the shipped rule-based gate on both real domains at once. Embeddings are cached to a
+  gitignored file so reruns are instant. Pipeline still unchanged; productionizing behind a
+  Phase 4 flag is the next deliberate step.
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.

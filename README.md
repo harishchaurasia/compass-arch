@@ -250,8 +250,8 @@ Built in the open, heading toward production - not there yet.
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)
 - ✅ One-call public API (`compass.run`) + runnable example, and a regenerable [leaderboard](LEADERBOARD.md) anyone can PR a model into
 - ✅ Ruled out the cheap discrimination fix: structural **precondition checks** (target/destination grounding, read-before-write) score at chance from the traces ([FINDINGS.md](FINDINGS.md) §10) - the failure is a semantically wrong action on a correctly-grounded target
-- ✅ First **learned probe** with a semantic action-vs-request signal: a lexical proxy adds real held-out discrimination on retail (**0.40 → 0.54** AUC, §11) but is too crude to beat the shipped rule on airline - direction confirmed, TF-IDF insufficient
-- 🔜 Swap the lexical proxy for a genuine semantic signal (local embeddings or an LLM-judge) and re-measure with the same held-out harness (`analysis/learned_probe.py`)
+- ✅ **Learned semantic probe beats the shipped gate.** A probe over an action-vs-request match: TF-IDF proxy helps retail only (0.40 → 0.54), but genuine **sentence embeddings** (`nomic-embed-text`) lift held-out AUC to **0.63 retail / 0.66 airline** (§11) - the first signal to beat the rule-based gate on both real domains at once, isolated to the embedding by an identical CV harness
+- 🔜 Productionize it as a Phase 4 flag: ship a fitted probe + the runtime embedding call, with the rule-based aggregator staying the locked default; prove cross-task generalization beyond this suite
 
 ## Development
 

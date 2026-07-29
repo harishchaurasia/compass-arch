@@ -113,8 +113,12 @@ class SemProbe:
     domain: str
 
 
-def probe_trial(dom: Domain, tfidf: Tfidf, model: str, success: int,
+def probe_trial(dom: Domain, sim, model: str, success: int,
                 success_probs: list[float], mutated: list, trace: dict) -> SemProbe | None:
+    """`sim` is any object exposing cosine(a, b) -> float (TF-IDF here; a
+    sentence-embedding backend in analysis/embed_probe.py). Everything else -
+    which texts get compared, the label, the step-time features - is identical
+    across backends, so the two only differ in how affinity is measured."""
     if not success_probs:
         return None
     steps = trace.get("steps", [])
@@ -136,13 +140,13 @@ def probe_trial(dom: Domain, tfidf: Tfidf, model: str, success: int,
     for tok in ids:
         intro = next((o for o in obs if tok in o), None)
         if intro is not None:
-            per_id.append(tfidf.cosine(req, intro))
+            per_id.append(sim.cosine(req, intro))
     target_affinity = max(per_id) if per_id else 0.0
     min_arg_justif = min(per_id) if per_id else 0.0
 
     # (b) action affinity: does the action's own text read like the request?
     action_text = str(first_high.get("reasoning", "")) + " " + json.dumps(args)
-    action_affinity = tfidf.cosine(req, action_text)
+    action_affinity = sim.cosine(req, action_text)
 
     return SemProbe(
         model=model,
@@ -176,11 +180,20 @@ def _fmt(x: float) -> str:
     return "  nan" if x != x else f"{x:.3f}"
 
 
-def collect(dom: Domain) -> list[SemProbe]:
+def make_tfidf(corpus: list[list[str]]):
+    """Default similarity backend: TF-IDF cosine fit on this suite's vocabulary."""
+    return Tfidf(corpus)
+
+
+def collect(dom: Domain, make_sim=make_tfidf) -> list[SemProbe]:
     """Feature records for every high-risk Compass trial in `dom` (no printing).
-    Shared by report() and analysis/learned_probe.py so both see identical features."""
+    Shared by report() and analysis/learned_probe.py so both see identical features.
+
+    make_sim(corpus) -> object with cosine(a, b) is the pluggable affinity backend;
+    it defaults to TF-IDF and is swapped for sentence embeddings in embed_probe.py.
+    The corpus (every request + observation) is passed either way; an embedding
+    backend that needs no corpus simply ignores it."""
     rows = load_rows(dom)
-    # IDF corpus: every request + observation in this domain's analysed trials.
     corpus: list[list[str]] = []
     parsed = []
     for model, success, sp, mut, tr in rows:
@@ -188,8 +201,8 @@ def collect(dom: Domain) -> list[SemProbe]:
         corpus.append(_tokens(_request(trace)))
         corpus.extend(_tokens(o) for o in _observations(trace))
         parsed.append((model, success, json.loads(sp), json.loads(mut), trace))
-    tfidf = Tfidf(corpus)
-    return [p for args in parsed if (p := probe_trial(dom, tfidf, *args)) is not None]
+    sim = make_sim(corpus)
+    return [p for args in parsed if (p := probe_trial(dom, sim, *args)) is not None]
 
 
 def report(dom: Domain) -> list[SemProbe]:

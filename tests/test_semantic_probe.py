@@ -8,8 +8,23 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis"))
 
+from embed_probe import Embedder  # noqa: E402
 from learned_probe import _fit, _standardize  # noqa: E402
 from semantic_probe import Tfidf, _tokens  # noqa: E402
+
+
+class _FakeEmbedder(Embedder):
+    """Embedder with a stubbed backend - no Ollama server, no disk cache - so the
+    cosine math is testable offline."""
+
+    def __init__(self, vectors: dict):
+        self._vectors = vectors
+        self._cache = {}
+        self._dirty = False
+        self.model = "fake"
+
+    def _embed(self, text: str):
+        return self._vectors[text]
 
 
 def test_tokens_drop_stopwords_and_singletons():
@@ -30,6 +45,18 @@ def test_cosine_partial_overlap_is_between():
     tf = Tfidf([_tokens("cancel boston flight reservation")])
     v = tf.cosine("cancel boston flight", "boston flight change")
     assert 0.0 < v < 1.0
+
+
+def test_embedder_cosine_math():
+    emb = _FakeEmbedder({
+        "same": [1.0, 0.0, 0.0],
+        "same2": [2.0, 0.0, 0.0],   # parallel -> cosine 1
+        "orth": [0.0, 1.0, 0.0],    # orthogonal -> cosine 0
+        "opp": [-1.0, 0.0, 0.0],    # opposite -> cosine -1
+    })
+    assert abs(emb.cosine("same", "same2") - 1.0) < 1e-9
+    assert abs(emb.cosine("same", "orth") - 0.0) < 1e-9
+    assert abs(emb.cosine("same", "opp") + 1.0) < 1e-9
 
 
 def test_logreg_separates_a_linearly_separable_set():
