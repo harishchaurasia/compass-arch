@@ -9,8 +9,18 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis"))
 
 from embed_probe import Embedder  # noqa: E402
-from learned_probe import _fit, _standardize  # noqa: E402
-from semantic_probe import Tfidf, _tokens  # noqa: E402
+from learned_probe import _fit, _standardize, cross_domain_auc  # noqa: E402
+from semantic_probe import SemProbe, Tfidf, _tokens  # noqa: E402
+
+
+def _probe(domain: str, compound: int, signal: float) -> SemProbe:
+    """Minimal SemProbe where target_affinity carries the label (high = clean),
+    everything else neutral - lets a cross-domain test exercise the plumbing."""
+    return SemProbe(
+        model="m", success=1 - compound, compound=compound, mean_success_prob=0.5,
+        target_affinity=signal, action_affinity=0.0, min_arg_justif=0.0,
+        confidence=0.5, step_index=1, n_prior_obs=1, domain=domain,
+    )
 
 
 class _FakeEmbedder(Embedder):
@@ -57,6 +67,31 @@ def test_embedder_cosine_math():
     assert abs(emb.cosine("same", "same2") - 1.0) < 1e-9
     assert abs(emb.cosine("same", "orth") - 0.0) < 1e-9
     assert abs(emb.cosine("same", "opp") + 1.0) < 1e-9
+
+
+def test_cross_domain_auc_transfers_a_learnable_signal():
+    # same rule in both domains (clean trials have high target_affinity), so a
+    # probe trained on one should score the other near-perfectly.
+    rng = np.random.default_rng(0)
+    def make(domain):
+        out = []
+        for _ in range(40):
+            out.append(_probe(domain, 0, float(rng.normal(2, 0.4))))   # clean, high signal
+            out.append(_probe(domain, 1, float(rng.normal(-2, 0.4))))  # compound, low signal
+        return out
+    auc = cross_domain_auc(make("retail"), make("airline"), ["target_affinity"])
+    assert auc > 0.9  # signal transfers across domains
+
+
+def test_cross_domain_auc_chance_when_signal_is_domain_specific():
+    # signal is inverted between domains -> a probe trained on one misreads the other.
+    rng = np.random.default_rng(1)
+    retail = [_probe("retail", c, float(rng.normal(2 if c == 0 else -2, 0.4)))
+              for _ in range(40) for c in (0, 1)]
+    airline = [_probe("airline", c, float(rng.normal(-2 if c == 0 else 2, 0.4)))
+               for _ in range(40) for c in (0, 1)]
+    auc = cross_domain_auc(retail, airline, ["target_affinity"])
+    assert auc < 0.2  # anti-correlated, as expected
 
 
 def test_logreg_separates_a_linearly_separable_set():

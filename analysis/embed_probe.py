@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from discrimination import DOMAINS, auc  # noqa: E402
-from learned_probe import AFFINITY_FEATS, BASE_FEATS, evaluate  # noqa: E402
+from learned_probe import AFFINITY_FEATS, BASE_FEATS, cross_domain_auc, evaluate  # noqa: E402
 from semantic_probe import SemProbe, collect  # noqa: E402
 
 OLLAMA = "http://localhost:11434/api/embeddings"
@@ -135,6 +135,18 @@ def main() -> int:
         pd = r["per_domain"]
         print(f"  {name:12s} {r['pooled_mean']:.3f} +/-{r['pooled_std']:.3f}   "
               f"{pd.get('retail', float('nan')):>7.3f}  {pd.get('airline', float('nan')):>7.3f}")
+
+    # Cross-domain: train on one domain, test on the other. The strongest test
+    # that the probe learned a transferable signal and not task-specific patterns.
+    feats = BASE_FEATS + AFFINITY_FEATS
+    print("\nCross-domain generalization (train -> test, no shared tasks/tools/vocab):")
+    print(f"  {'backend':12s} {'retail->airline':>16s}  {'airline->retail':>16s}")
+    for name, probes in (("TF-IDF", tfidf_probes), ("Embedding", embed_probes)):
+        retail = [p for p in probes if p.domain == "retail"]
+        airline = [p for p in probes if p.domain == "airline"]
+        r2a = cross_domain_auc(retail, airline, feats)
+        a2r = cross_domain_auc(airline, retail, feats)
+        print(f"  {name:12s} {r2a:>16.3f}  {a2r:>16.3f}")
     return 0
 
 

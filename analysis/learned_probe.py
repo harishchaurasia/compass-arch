@@ -46,10 +46,28 @@ BASE_FEATS = ["confidence", "step_index", "n_prior_obs"]
 AFFINITY_FEATS = ["target_affinity", "action_affinity", "min_arg_justif"]
 
 
-def _matrix(probes: list[SemProbe], feats: list[str]) -> np.ndarray:
+def _matrix(probes: list[SemProbe], feats: list[str], add_domain: bool = True) -> np.ndarray:
     cols = [[getattr(p, f) for p in probes] for f in feats]
-    cols.append([1.0 if p.domain == "airline" else 0.0 for p in probes])  # domain dummy
+    if add_domain:
+        cols.append([1.0 if p.domain == "airline" else 0.0 for p in probes])  # domain dummy
     return np.array(cols, dtype=float).T
+
+
+def cross_domain_auc(train: list[SemProbe], test: list[SemProbe], feats: list[str]) -> float:
+    """Train on one domain, score compound-failure discrimination on the OTHER.
+    The domain dummy is dropped (it is constant within each set, so it would only
+    add a useless intercept shift); standardization uses TRAIN stats applied to
+    TEST. This is the real generalization test - the test domain shares no tasks,
+    tools, or vocabulary with training, so a chance result would mean the probe
+    was memorizing task-specific patterns rather than learning a transferable signal."""
+    ytr = np.array([p.compound for p in train], dtype=float)
+    yte = np.array([p.compound for p in test], dtype=float)
+    xtr_raw = _matrix(train, feats, add_domain=False)
+    xte_raw = _matrix(test, feats, add_domain=False)
+    xtr, xte = _standardize(xtr_raw, xte_raw)
+    w = _fit(xtr, ytr)
+    p_clean = 1.0 - 1.0 / (1.0 + np.exp(-xte @ w))
+    return auc(list(p_clean), [1 - int(v) for v in yte])
 
 
 def _fit(x: np.ndarray, y: np.ndarray) -> np.ndarray:

@@ -434,18 +434,38 @@ One caveat kept honest: the *univariate* embedding affinities are still weak (ta
 claim is that the embedding representation lets the classifier extract a consistent
 multivariate signal, not that any single affinity feature is a good gate on its own.
 
+The obvious worry is that stratified CV over random *trials* mixes tasks, so a probe could
+be memorizing task-specific patterns rather than learning a transferable signal. The test
+that settles it is **cross-domain**: train on one domain, predict compound failure on the
+other, which shares no tasks, tools, or vocabulary. The domain dummy is dropped (constant
+within each set), standardization uses train stats on test:
+
+| Cross-domain AUC (train → test) | retail → airline | airline → retail |
+|---|---|---|
+| Probe with TF-IDF affinities | 0.489 | 0.568 |
+| Probe with embedding affinities | **0.668** | 0.566 |
+
+The embedding probe trained **only on retail** scores 0.668 on airline - essentially its
+own within-domain airline number (0.659), across a disjoint task distribution - while
+TF-IDF collapses to chance (0.489) in the same direction. That is direct evidence the
+embedding signal is a transferable "does this action match the request" signal, not task
+memorization, and it is the sharpest single line separating the embedding from the lexical
+proxy. Transfer is not symmetric: airline → retail is only ~0.57 for both backends, so a
+probe trained on the harder domain generalizes less well - honest, and a reason to fit on
+the broadest available task mix if this is productionized.
+
 This is the first result that plausibly *earns* a place in the pipeline, and it is also
 where the honest cost shows up: it needs an embedding call per high-risk action at runtime
 and a probe fit on trajectory data, so wiring it in is a real Phase 4 change (behind a
 flag, with the aggregator staying locked as the default) - not a free win. The pipeline is
-still **unchanged** here by choice: this section establishes the result and the harness;
-productionizing it (a shipped probe + the live embedding call + cross-task generalization
-beyond this suite) is the next deliberate step, not a side effect of an analysis script.
+still **unchanged** here by choice: this section establishes the result, the generalization
+evidence, and the harness; productionizing it (a shipped probe + the live embedding call)
+is the next deliberate step, not a side effect of an analysis script.
 
 ```bash
 uv run python analysis/semantic_probe.py   # univariate TF-IDF affinity AUCs, per model/domain
 uv run python analysis/learned_probe.py    # held-out CV, TF-IDF backend: base vs +affinity
-uv run python analysis/embed_probe.py      # held-out CV, embedding backend (needs Ollama + nomic-embed-text)
+uv run python analysis/embed_probe.py      # held-out CV + cross-domain, embedding backend (needs Ollama + nomic-embed-text)
 ```
 
 ## Takeaway
