@@ -5,8 +5,9 @@ A `find → diagnose → intervene → measure` arc across four models: a fronti
 `llama3.1:8b`), temperature 0. §0-5 are the τ-bench retail single-shot suite (115
 tasks); §6 is the cross-domain MCP filesystem suite (31 tasks); §7 is the verification
 ablation, §8 the `T_HIGH` sweep, §9 a second real τ-bench domain (airline, 50 tasks), §10 a
-from-the-traces test of the "precondition check" fix for the discrimination gap, and §11 a
-first learned-probe attack on it with a semantic action-vs-request signal.
+from-the-traces test of the "precondition check" fix for the discrimination gap, §11 a
+learned-probe attack on it with a semantic action-vs-request signal, and §12 that probe run
+live on the suites.
 The short version: Compass reduces destructive failures, but on the weak models it does so
 by *abstaining broadly* rather than by gating precisely, and §3/§7/§8 are the honest
 accounting of exactly how.
@@ -479,6 +480,49 @@ uv run python analysis/embed_probe.py      # held-out CV + cross-domain, embeddi
 uv run python scripts/fit_probe.py         # refit the shipped probe (compass/probe_weights.json) from the traces
 ```
 
+## 12. End-to-end: the probe gate on the live suites
+
+Every number above is offline - discrimination AUC on stored trajectories. The question
+that matters for a gate is whether that ranking translates into *the running agent making
+better decisions*. So the probe was run live: `build_compass_agent(..., calibration="probe")`
+on gpt-4o-mini, embedding call per high-risk action, against the same retail (115) and
+airline (50) suites, versus vanilla and baseline Compass.
+
+| gpt-4o-mini | Compound: Vanilla → Compass → **+Probe** | Abstain: Compass → Probe | Sel. success: Compass → Probe |
+|---|---|---|---|
+| retail (n=115)  | 54.8% → 18.3% → **0.9%** | 60.9% → 76.5% | 15.6% → 11.1% |
+| airline (n=50)  | 78.0% → 28.0% → **8.0%** | 56.0% → 70.0% | 31.8% → 20.0% |
+
+The probe gate cuts compound failure hard on both domains - retail 18.3% → **0.9%** (a 20x
+reduction, near-elimination), airline 28% → **8%**. This is the running agent, not a
+replay: a fallback to the rule-based score would have reproduced Compass's 18.3% / 28%, and
+the abstention shift (retail 60.9% → 76.5%) confirms the probe is making materially
+different, more conservative decisions.
+
+The load-bearing question is whether that safety comes from *better discrimination* or just
+*more abstention*, and the numbers separate the two. On retail the probe executes 23.5% of
+tasks against baseline's 39.1% - a 0.60 factor. If its extra abstention were spread randomly
+across actions, compound would fall proportionally, to about 18.3% x 0.60 ~ 11%. It fell to
+**0.9%**. The probe is concentrating its refusals on the compound-failure-prone actions, not
+cutting execution blindly - which is discrimination, and exactly what the AUC predicted.
+Airline reproduces the argument: execution 44% → 30% (factor 0.68) predicts ~19% compound
+under random abstention, and the observed value is **8%**.
+
+The cost is real and is the same one the operating-point diagnostic (§11) forecast:
+abstention rises ~15 points and selective success falls (retail 15.6% → 11.1%, airline
+31.8% → 20.0%). At the inherited `T_HIGH = 0.8` the probe sits at a deliberately safe,
+low-coverage point. The clean way to spend the discrimination gain on *coverage* instead of
+*more caution* is a probe-specific threshold: lower `T_HIGH` for the probe until its
+abstention matches baseline Compass, and the AUC says compound should still land below
+baseline. That matched-coverage sweep, and the same run on the three local models, is the
+remaining work - but the headline is settled: the offline 0.63/0.66 discrimination is not a
+paper artefact, it makes the live gate roughly an order of magnitude safer on retail.
+
+```bash
+uv run python scripts/run_tau_eval.py     --model gpt-4o-mini --conditions compass --calibration probe
+uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compass --calibration probe
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -519,7 +563,12 @@ shipped rule everywhere, whereas swapping in genuine sentence embeddings lifts a
 probe to **0.63 retail / 0.66 airline** - the first signal to beat the shipped gate on
 both real domains at once. The learned semantic probe is no longer a hypothesis; it is the
 first thing that has earned a path into the pipeline, at the cost of a runtime embedding
-call and a Phase 4 productionization behind a flag.
+call and a Phase 4 productionization behind a flag. And §12 closes the loop by running that
+flag live: on gpt-4o-mini the probe gate cuts compound failure to 0.9% on retail and 8% on
+airline, and does it by concentrating abstention on the dangerous actions (far more than
+random extra caution would explain), not by refusing blindly. The coverage cost is real and
+the operating point still wants a probe-specific threshold - but the discrimination signal
+that every earlier section said was missing now demonstrably makes the running agent safer.
 
 ## Reproduce
 
