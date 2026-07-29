@@ -463,9 +463,14 @@ still **unchanged** as the default by choice, but the probe is now **wired behin
 `SemanticProbe` (`compass/probe.py`, weights fit by `scripts/fit_probe.py`), falling back
 to the rule-based score whenever the embedding backend is absent. The runtime feature
 extractor is domain-agnostic and shared with training, and it reproduces the result
-out-of-fold (CV AUC 0.66 on the agnostic features). What is left is the end-to-end proof -
-re-running the suites under the flag and tuning a probe-specific operating point, since it
-currently inherits the rule-based `T_HIGH`.
+out-of-fold (CV AUC 0.66 on the agnostic features). The probe inherits the rule-based
+`T_HIGH = 0.8`, and its success probabilities show that is a safe but conservative
+operating point: in-sample the probe's `P(clean)` runs 0.36-0.96 on clean actions
+(median 0.61) versus 0.25-0.91 on compound ones (median 0.54), so at 0.8 it would execute
+23% of clean high-risk actions while letting only 5% of compound ones through, and at 0.6
+it recovers coverage (54% of clean) at the cost of more leakage (23% of compound). What is
+left is the end-to-end proof - re-running the suites under the flag and picking a
+probe-specific threshold on a dev split rather than inheriting `T_HIGH`.
 
 ```bash
 uv run python analysis/semantic_probe.py   # univariate TF-IDF affinity AUCs, per model/domain

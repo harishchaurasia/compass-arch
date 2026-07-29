@@ -159,6 +159,25 @@ def main() -> int:
     }
     OUT.write_text(json.dumps(spec, indent=2), encoding="utf-8")
     print(f"Wrote {OUT.relative_to(ROOT)}")
+
+    # Operating-point diagnostic: where do the probe's success probabilities land,
+    # and how would the locked T_HIGH = 0.8 gate behave on them? The probe inherits
+    # that threshold, so this says whether 0.8 is sane or needs probe-specific tuning.
+    p_clean = 1.0 - 1.0 / (1.0 + np.exp(-z_aug @ w))
+    clean_ps = p_clean[y == 0]
+    comp_ps = p_clean[y == 1]
+
+    def _q(a):
+        return f"min {a.min():.2f}  median {np.median(a):.2f}  max {a.max():.2f}"
+
+    print("\nProbe success_prob (in-sample) by outcome:")
+    print(f"  clean actions   ({len(clean_ps)}): {_q(clean_ps)}")
+    print(f"  compound actions ({len(comp_ps)}): {_q(comp_ps)}")
+    for t in (0.6, 0.8):
+        exec_clean = float((clean_ps >= t).mean())
+        exec_comp = float((comp_ps >= t).mean())
+        print(f"  at threshold {t:.1f}: would EXECUTE {exec_clean:.0%} of clean, "
+              f"{exec_comp:.0%} of compound actions")
     return 0
 
 
