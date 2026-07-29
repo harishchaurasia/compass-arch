@@ -458,14 +458,20 @@ This is the first result that plausibly *earns* a place in the pipeline, and it 
 where the honest cost shows up: it needs an embedding call per high-risk action at runtime
 and a probe fit on trajectory data, so wiring it in is a real Phase 4 change (behind a
 flag, with the aggregator staying locked as the default) - not a free win. The pipeline is
-still **unchanged** here by choice: this section establishes the result, the generalization
-evidence, and the harness; productionizing it (a shipped probe + the live embedding call)
-is the next deliberate step, not a side effect of an analysis script.
+still **unchanged** as the default by choice, but the probe is now **wired behind a flag**:
+`build_compass_agent(..., calibration="probe")` scores high-risk actions with a shipped
+`SemanticProbe` (`compass/probe.py`, weights fit by `scripts/fit_probe.py`), falling back
+to the rule-based score whenever the embedding backend is absent. The runtime feature
+extractor is domain-agnostic and shared with training, and it reproduces the result
+out-of-fold (CV AUC 0.66 on the agnostic features). What is left is the end-to-end proof -
+re-running the suites under the flag and tuning a probe-specific operating point, since it
+currently inherits the rule-based `T_HIGH`.
 
 ```bash
 uv run python analysis/semantic_probe.py   # univariate TF-IDF affinity AUCs, per model/domain
 uv run python analysis/learned_probe.py    # held-out CV, TF-IDF backend: base vs +affinity
 uv run python analysis/embed_probe.py      # held-out CV + cross-domain, embedding backend (needs Ollama + nomic-embed-text)
+uv run python scripts/fit_probe.py         # refit the shipped probe (compass/probe_weights.json) from the traces
 ```
 
 ## Takeaway

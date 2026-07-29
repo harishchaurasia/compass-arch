@@ -50,6 +50,12 @@ def run(agent, instruction: str, *, calibration_shrink: bool = False) -> GateRes
     `calibration_shrink` must match the flag the agent graph was built with, so
     the replayed `success_probs` reflect the aggregator that actually gated the
     run. Returns a `GateResult`; nothing here touches the LangGraph state directly.
+
+    Note: for a probe-mode agent (calibration="probe") the live gate uses the
+    semantic probe, but the `success_probs` replayed here are the rule-based
+    reference score (the probe needs an embedding backend and per-step context to
+    recompute). The agent's decisions - abstained, steps - are authoritative; only
+    this reported score is the rule-based stand-in in that mode.
     """
     final_state = agent.invoke(
         {

@@ -32,9 +32,16 @@ so the public API may still change between minor versions.
 - **Embedding backend closes it.** `analysis/embed_probe.py` swaps TF-IDF for
   `nomic-embed-text` sentence embeddings (local Ollama) behind the same feature interface
   and CV harness; held-out AUC rises to 0.63 retail / 0.66 airline - the first signal to
-  beat the shipped rule-based gate on both real domains at once. Embeddings are cached to a
-  gitignored file so reruns are instant. Pipeline still unchanged; productionizing behind a
-  Phase 4 flag is the next deliberate step.
+  beat the shipped rule-based gate on both real domains at once, and it transfers across
+  domains (train retail → test airline 0.67) where the lexical proxy collapses to chance.
+  Embeddings are cached to a gitignored file so reruns are instant.
+- **Semantic probe wired behind a flag.** `build_compass_agent(..., calibration="probe")`
+  scores high-risk actions with the embedding probe (`compass/probe.py`, fitted weights in
+  `compass/probe_weights.json` via `scripts/fit_probe.py`). The rule-based aggregator stays
+  the locked default; the probe falls back to it for any step whenever the embedding backend
+  is unavailable, so enabling the flag can never fail harder than default. Inference is pure
+  Python (no numpy in the core); only the embedding call reaches out (stdlib HTTP to Ollama).
+  `calibration_shrink=True` is now a synonym for `calibration="shrink"`.
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.

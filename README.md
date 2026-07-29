@@ -102,6 +102,22 @@ Runnable end-to-end in [`examples/gate_your_agent.py`](examples/gate_your_agent.
 (`uv run python examples/gate_your_agent.py`). The same bridge also drives real
 off-the-shelf MCP servers unchanged (see [MCP](#cross-domain-a-real-mcp-server)).
 
+**Opt-in semantic gate (experimental).** By default the gate scores actions with the
+locked rule-based aggregator. Passing `calibration="probe"` instead scores high-risk
+actions with the learned embedding probe ([FINDINGS.md](FINDINGS.md) §11), which
+discriminates good actions from bad far better on the benchmarks (held-out AUC 0.40 →
+0.63 retail, 0.60 → 0.66 airline):
+
+```python
+agent = build_compass_agent(model, tools, tool_risk=..., calibration="probe")
+```
+
+It needs a local [Ollama](https://ollama.com) server with `nomic-embed-text` pulled
+(`ollama pull nomic-embed-text`); if that backend is absent the gate silently falls back
+to the rule-based score, so the flag is always safe to leave on. The shipped probe was fit
+on this repo's τ-bench traces - treat it as experimental until you validate it on your own
+tasks (`scripts/fit_probe.py` refits it).
+
 ## Results
 
 *115 τ-bench retail tasks, single-shot, temperature 0.*
@@ -250,8 +266,9 @@ Built in the open, heading toward production - not there yet.
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)
 - ✅ One-call public API (`compass.run`) + runnable example, and a regenerable [leaderboard](LEADERBOARD.md) anyone can PR a model into
 - ✅ Ruled out the cheap discrimination fix: structural **precondition checks** (target/destination grounding, read-before-write) score at chance from the traces ([FINDINGS.md](FINDINGS.md) §10) - the failure is a semantically wrong action on a correctly-grounded target
-- ✅ **Learned semantic probe beats the shipped gate.** A probe over an action-vs-request match: TF-IDF proxy helps retail only (0.40 → 0.54), but genuine **sentence embeddings** (`nomic-embed-text`) lift held-out AUC to **0.63 retail / 0.66 airline** (§11) - the first signal to beat the rule-based gate on both real domains at once, isolated to the embedding by an identical CV harness
-- 🔜 Productionize it as a Phase 4 flag: ship a fitted probe + the runtime embedding call, with the rule-based aggregator staying the locked default; prove cross-task generalization beyond this suite
+- ✅ **Learned semantic probe beats the shipped gate.** A probe over an action-vs-request match: TF-IDF proxy helps retail only (0.40 → 0.54), but genuine **sentence embeddings** (`nomic-embed-text`) lift held-out AUC to **0.63 retail / 0.66 airline** (§11), and it **transfers cross-domain** (train retail → test airline 0.67) where the lexical proxy is chance - the first signal to beat the rule-based gate on both real domains at once
+- ✅ **Wired behind a flag.** `build_compass_agent(..., calibration="probe")` gates high-risk actions with the probe; the rule-based aggregator stays the locked default and the gate falls back to it whenever no embedding backend is present, so the flag can never fail harder than default
+- 🔜 Prove it end-to-end: re-run the τ-bench suites under `calibration="probe"` and tune a probe-specific operating threshold (it currently inherits the rule-based `T_HIGH`)
 
 ## Development
 

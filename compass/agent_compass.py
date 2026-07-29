@@ -11,6 +11,12 @@ from pydantic import ValidationError
 
 from compass.calibration import calibrate
 from compass.policy import PolicyDecision, decide, max_risk
+from compass.probe import (
+    ProbeUnavailable,
+    SemanticProbe,
+    observations_from_messages,
+    request_from_messages,
+)
 from compass.schemas import CompassAction, CompassStep  # noqa: F401 — re-exported for callers
 from compass.trajectory import extract_features
 
@@ -148,14 +154,24 @@ def build_compass_agent(
     tool_risk: dict[str, str] | None = None,
     policy: str | None = None,
     calibration_shrink: bool = False,
+    calibration: str | None = None,
+    probe: SemanticProbe | None = None,
     verification: bool = True,
 ) -> StateGraph:
     """tool_risk maps tool name → static risk class ('low'|'medium'|'high').
     Effective risk is max(model's verbalized risk_level, tool class), so an
     under-labelled destructive tool is still gated as high. policy, when
     given, is embedded in the system prompt (e.g. the τ-bench retail wiki).
-    calibration_shrink=True selects the Phase 4 shrinkage aggregator (baseline
-    stays the default).
+    calibration selects the aggregator that turns confidence + features into a
+    success probability: "rule" (the locked default), "shrink" (the Phase 4
+    base-rate prior), or "probe" (the Phase 4 semantic embedding probe of
+    FINDINGS section 11, which scores high-risk actions by how well they match
+    the request). The legacy calibration_shrink=True is kept as a synonym for
+    calibration="shrink" so existing callers keep working; an explicit
+    calibration wins if both are given. In "probe" mode a SemanticProbe is loaded
+    from the shipped weights (inject your own via probe= for a custom embedder);
+    if the embedding backend is unavailable at runtime the gate falls back to the
+    rule-based score for that step, so the flag can never fail harder than default.
 
     verification=False is the ablation arm: it strips SELF_VERIFY and the
     high-risk confirm pass so the gate is purely EXECUTE vs ABSTAIN. Shipped
@@ -164,6 +180,34 @@ def build_compass_agent(
     path versus from abstention alone."""
     tool_risk = tool_risk or {}
     tool_map = {t.name: t for t in tools}
+
+    # Resolve the aggregator mode. Explicit `calibration` wins; otherwise fall back
+    # to the legacy bool. "probe" loads the shipped SemanticProbe unless one is
+    # injected (a missing weights file raises here - a build-time misconfiguration -
+    # while a missing embedding backend degrades gracefully at runtime instead).
+    mode = calibration or ("shrink" if calibration_shrink else "rule")
+    if mode not in ("rule", "shrink", "probe"):
+        raise ValueError(f"Unknown calibration mode: {mode!r}")
+    if mode == "probe" and probe is None:
+        probe = SemanticProbe.load()
+
+    def _score(state: CompassState, step: CompassStep, features, risk: str) -> float:
+        """success_prob for a step. The probe scores only high-risk actions (where
+        it was validated); everything else, and any probe failure, uses the locked
+        rule-based/shrinkage aggregator."""
+        if mode == "probe" and risk == "high":
+            try:
+                return probe.success_prob(
+                    request_from_messages(state["messages"]),
+                    observations_from_messages(state["messages"]),
+                    step,
+                    n_prior_tool_calls=sum(1 for s in state["steps"][:-1] if s.action.tool),
+                    step_index=len(state["steps"]) - 1,
+                )
+            except ProbeUnavailable as e:
+                _log.warning("semantic probe unavailable (%s); using rule-based score", e)
+        return calibrate(step.confidence, features, shrink=(mode == "shrink"))
+
     # Local (Ollama) models don't reliably emit native tool_calls, so
     # method="function_calling" leaves `parsed` empty — they put schema-shaped
     # JSON in message content instead. json_schema uses Ollama's constrained
@@ -212,8 +256,8 @@ def build_compass_agent(
         if step.action.final_answer is not None:
             return "finish"
         features = extract_features(state["steps"])
-        success_prob = calibrate(step.confidence, features, shrink=calibration_shrink)
         risk = _effective_risk(step)
+        success_prob = _score(state, step, features, risk)
         decision = decide(success_prob, risk)
         _log.debug(
             "step %d: tool=%s risk=%s conf=%.2f success_prob=%.2f -> %s",
@@ -296,9 +340,7 @@ def build_compass_agent(
     def abstain(state: CompassState) -> dict:
         step = state["steps"][-1]
         risk = _effective_risk(step) if step.action.tool else step.risk_level
-        success_prob = calibrate(
-            step.confidence, extract_features(state["steps"]), shrink=calibration_shrink
-        )
+        success_prob = _score(state, step, extract_features(state["steps"]), risk)
         _log.info(
             "ABSTAIN at step %d: tool=%s risk=%s success_prob=%.2f (conf %.2f)",
             len(state["steps"]), step.action.tool, risk, success_prob, step.confidence,
