@@ -520,7 +520,9 @@ be spent on *coverage* instead of *caution*:
 | retail  - compass baseline (T=0.8) | 18.3% | 60.9% | 15.6% |
 | retail  - probe (T=0.6) | **11.3%** | **45.2%** | **19.0%** |
 | airline - compass baseline (T=0.8) | 28.0% | 56.0% | 31.8% |
-| airline - probe (T=0.6) | **4.0%** | 72.0% | 21.4% |
+| airline - probe (T=0.8) | 8.0% | 70.0% | 20.0% |
+| airline - probe (T=0.6) | 4.0% | 72.0% | 21.4% |
+| airline - probe (T=0.4) | 34.0% | 38.0% | 22.6% |
 
 On **retail this is a strict Pareto dominance**: the probe at 0.6 abstains *less* than
 baseline (45.2% vs 60.9%), yet has *lower* compound failure (11.3% vs 18.3%) *and* higher
@@ -529,19 +531,28 @@ knob that trades coverage for safety; it cannot make an agent both act more ofte
 less. The only way to do that is to rank actions better, so this is discrimination in its
 cleanest observable form: the probe frontier sits strictly inside the baseline point.
 
-**Airline does not dominate, and the reason is instructive.** Dropping `T_HIGH` from 0.8 to
-0.6 barely moved airline abstention (70% → 72%): almost no airline high-risk action scores
-between 0.6 and 0.8, so the probe rates them broadly low and a global 0.6 cannot recover
-its coverage. The probe is far safer there (28% → 4% compound) but stays conservative, and
-matching baseline coverage would need an even lower, *per-domain* threshold. That is a real
-limitation of a single global `T_HIGH`, not a detail to smooth over - the shipped probe
-inherits one threshold across domains whose score distributions differ.
+**Airline does not dominate at any threshold, and sweeping three of them shows why.** The
+first read was that airline just wanted a lower `T_HIGH` - from 0.8 to 0.6 abstention hardly
+moves (70% → 72%), so its scores clearly sit below 0.6. But dropping to **0.4** does not
+recover coverage cheaply: abstention falls to 38% (below baseline's 56%), and compound
+failure jumps to **34% - worse than baseline's 28%**. There is a cliff between 0.6 and 0.4
+because airline's clean and compound score distributions overlap heavily in that band, so no
+threshold buys both safety and coverage: you get safety at low coverage (0.6-0.8, 4-8%
+compound at ~71% abstention) or coverage at high risk (0.4, 34% compound). The retail
+dominance is real but **domain-specific**; airline's probe, despite a similar offline AUC
+(0.66), does not separate the two classes sharply enough to yield an operating point that
+beats the rule-based gate on both axes. (This corrects the first draft of this section,
+which guessed a lower per-domain threshold would fix airline - the sweep shows it does not.)
 
 The headline is settled, with the nuance intact: the offline 0.63/0.66 discrimination is
-not a paper artefact. It makes the live gate an order of magnitude safer, and on retail it
-strictly dominates the rule-based gate - safer *and* higher-coverage at once. Remaining:
-a per-domain probe threshold (airline wants a lower one), and the same runs on the three
-local models.
+not a paper artefact. It makes the live gate an order of magnitude safer at a fixed
+threshold, and on retail it strictly dominates the rule-based gate - safer *and*
+higher-coverage at once. But dominance is not universal: on airline the same AUC does not
+translate into a threshold that beats baseline on both axes, a reminder that a good ranking
+metric and a good operating point are not the same thing. Remaining: whether a *per-domain,
+dev-split-tuned* threshold or a sharper score (a better embedding, or calibrating the probe
+output) can give airline a dominating point too, and the same runs on the three local
+models.
 
 ```bash
 uv run python scripts/run_tau_eval.py     --model gpt-4o-mini --conditions compass --calibration probe
@@ -549,6 +560,7 @@ uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compa
 # safety-coverage frontier: the same runs at a lower high-risk threshold
 uv run python scripts/run_tau_eval.py     --model gpt-4o-mini --conditions compass --calibration probe --t-high 0.6
 uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compass --calibration probe --t-high 0.6
+uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compass --calibration probe --t-high 0.4
 ```
 
 ## Takeaway
@@ -595,11 +607,13 @@ call and a Phase 4 productionization behind a flag. And §12 closes the loop by 
 flag live: on gpt-4o-mini the probe gate cuts compound failure to 0.9% on retail and 8% on
 airline, and a threshold sweep shows the safety is discrimination, not caution - on retail
 the probe at `T_HIGH = 0.6` *strictly dominates* the rule-based gate (less abstention, less
-compound, higher selective success at once), which a caution knob can never do. Airline
-does not dominate (its scores cluster low, so a global lower threshold cannot recover
-coverage - it needs a per-domain one), but it is far safer. The discrimination signal that
-every earlier section said was missing now demonstrably makes the running agent safer, and
-on one real domain safer *and* higher-coverage than the locked baseline.
+compound, higher selective success at once), which a caution knob can never do. Airline does
+not dominate at any of three swept thresholds - it is far safer at low coverage, but the one
+threshold that recovers coverage (0.4) pushes compound *above* baseline, so its similar
+offline AUC does not buy a dominating operating point. The discrimination signal every
+earlier section said was missing now demonstrably makes the running agent safer, and on one
+real domain safer *and* higher-coverage than the locked baseline - though §12 is equally the
+record that a strong ranking metric does not guarantee a dominating gate on every domain.
 
 ## Reproduce
 

@@ -46,8 +46,10 @@ so the public API may still change between minor versions.
   (`--calibration probe`), the probe gate cuts compound failure 18.3% → 0.9% (retail) and
   28% → 8% (airline). A threshold sweep (`--t-high 0.6`) shows the safety is discrimination,
   not caution: on retail the probe strictly dominates the rule-based gate (less abstention,
-  less compound, higher selective success at once); airline is far safer but wants a lower,
-  per-domain threshold since its probe scores cluster low (`FINDINGS.md` §12).
+  less compound, higher selective success at once). Airline is far safer at low coverage but
+  does NOT dominate at any swept threshold - the one that recovers coverage (0.4) pushes
+  compound above baseline, so its similar offline AUC (0.66) does not buy a dominating
+  operating point. Dominance is domain-specific (`FINDINGS.md` §12).
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.

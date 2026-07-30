@@ -269,7 +269,8 @@ Built in the open, heading toward production - not there yet.
 - ✅ **Learned semantic probe beats the shipped gate.** A probe over an action-vs-request match: TF-IDF proxy helps retail only (0.40 → 0.54), but genuine **sentence embeddings** (`nomic-embed-text`) lift held-out AUC to **0.63 retail / 0.66 airline** (§11), and it **transfers cross-domain** (train retail → test airline 0.67) where the lexical proxy is chance - the first signal to beat the rule-based gate on both real domains at once
 - ✅ **Wired behind a flag.** `build_compass_agent(..., calibration="probe")` gates high-risk actions with the probe; the rule-based aggregator stays the locked default and the gate falls back to it whenever no embedding backend is present, so the flag can never fail harder than default
 - ✅ **Proven end-to-end.** Run live on gpt-4o-mini, the probe gate cuts compound failure **18.3% → 0.9%** (retail) and **28% → 8%** (airline). A threshold sweep shows this is discrimination, not caution: on retail the probe at `T_HIGH=0.6` **strictly dominates** the rule-based gate - *less* abstention (45% vs 61%), *lower* compound (11% vs 18%), *higher* selective success (19% vs 16%) all at once ([FINDINGS.md](FINDINGS.md) §12)
-- 🔜 Per-domain threshold (airline's probe scores cluster low, so it wants a lower `T_HIGH` than retail) and the same runs on the three local models
+- ⚖️ **But dominance is domain-specific.** On airline no swept threshold beats baseline on both axes - safe only at low coverage; the one threshold that recovers coverage (0.4) pushes compound *above* baseline. Same offline AUC (0.66), different operating-point story - an honest limit worth stating
+- 🔜 A sharper/calibrated probe score or a per-domain dev-split threshold for airline, and the same runs on the three local models
 
 ## Development
 
