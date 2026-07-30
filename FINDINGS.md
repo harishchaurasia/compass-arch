@@ -511,16 +511,44 @@ under random abstention, and the observed value is **8%**.
 The cost is real and is the same one the operating-point diagnostic (§11) forecast:
 abstention rises ~15 points and selective success falls (retail 15.6% → 11.1%, airline
 31.8% → 20.0%). At the inherited `T_HIGH = 0.8` the probe sits at a deliberately safe,
-low-coverage point. The clean way to spend the discrimination gain on *coverage* instead of
-*more caution* is a probe-specific threshold: lower `T_HIGH` for the probe until its
-abstention matches baseline Compass, and the AUC says compound should still land below
-baseline. That matched-coverage sweep, and the same run on the three local models, is the
-remaining work - but the headline is settled: the offline 0.63/0.66 discrimination is not a
-paper artefact, it makes the live gate roughly an order of magnitude safer on retail.
+low-coverage point. So the probe was re-run at `T_HIGH = 0.6` (a second point on its
+safety-coverage frontier, not a tuned optimum) to see whether the discrimination gain can
+be spent on *coverage* instead of *caution*:
+
+| gpt-4o-mini | Compound | Abstain | Sel. success |
+|---|---|---|---|
+| retail  - compass baseline (T=0.8) | 18.3% | 60.9% | 15.6% |
+| retail  - probe (T=0.6) | **11.3%** | **45.2%** | **19.0%** |
+| airline - compass baseline (T=0.8) | 28.0% | 56.0% | 31.8% |
+| airline - probe (T=0.6) | **4.0%** | 72.0% | 21.4% |
+
+On **retail this is a strict Pareto dominance**: the probe at 0.6 abstains *less* than
+baseline (45.2% vs 60.9%), yet has *lower* compound failure (11.3% vs 18.3%) *and* higher
+selective success (19.0% vs 15.6%) - better on all three axes at once. Caution is a single
+knob that trades coverage for safety; it cannot make an agent both act more often and fail
+less. The only way to do that is to rank actions better, so this is discrimination in its
+cleanest observable form: the probe frontier sits strictly inside the baseline point.
+
+**Airline does not dominate, and the reason is instructive.** Dropping `T_HIGH` from 0.8 to
+0.6 barely moved airline abstention (70% → 72%): almost no airline high-risk action scores
+between 0.6 and 0.8, so the probe rates them broadly low and a global 0.6 cannot recover
+its coverage. The probe is far safer there (28% → 4% compound) but stays conservative, and
+matching baseline coverage would need an even lower, *per-domain* threshold. That is a real
+limitation of a single global `T_HIGH`, not a detail to smooth over - the shipped probe
+inherits one threshold across domains whose score distributions differ.
+
+The headline is settled, with the nuance intact: the offline 0.63/0.66 discrimination is
+not a paper artefact. It makes the live gate an order of magnitude safer, and on retail it
+strictly dominates the rule-based gate - safer *and* higher-coverage at once. Remaining:
+a per-domain probe threshold (airline wants a lower one), and the same runs on the three
+local models.
 
 ```bash
 uv run python scripts/run_tau_eval.py     --model gpt-4o-mini --conditions compass --calibration probe
 uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compass --calibration probe
+# safety-coverage frontier: the same runs at a lower high-risk threshold
+uv run python scripts/run_tau_eval.py     --model gpt-4o-mini --conditions compass --calibration probe --t-high 0.6
+uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compass --calibration probe --t-high 0.6
 ```
 
 ## Takeaway
@@ -565,10 +593,13 @@ both real domains at once. The learned semantic probe is no longer a hypothesis;
 first thing that has earned a path into the pipeline, at the cost of a runtime embedding
 call and a Phase 4 productionization behind a flag. And §12 closes the loop by running that
 flag live: on gpt-4o-mini the probe gate cuts compound failure to 0.9% on retail and 8% on
-airline, and does it by concentrating abstention on the dangerous actions (far more than
-random extra caution would explain), not by refusing blindly. The coverage cost is real and
-the operating point still wants a probe-specific threshold - but the discrimination signal
-that every earlier section said was missing now demonstrably makes the running agent safer.
+airline, and a threshold sweep shows the safety is discrimination, not caution - on retail
+the probe at `T_HIGH = 0.6` *strictly dominates* the rule-based gate (less abstention, less
+compound, higher selective success at once), which a caution knob can never do. Airline
+does not dominate (its scores cluster low, so a global lower threshold cannot recover
+coverage - it needs a per-domain one), but it is far safer. The discrimination signal that
+every earlier section said was missing now demonstrably makes the running agent safer, and
+on one real domain safer *and* higher-coverage than the locked baseline.
 
 ## Reproduce
 

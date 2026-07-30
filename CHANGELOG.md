@@ -44,8 +44,10 @@ so the public API may still change between minor versions.
   `calibration_shrink=True` is now a synonym for `calibration="shrink"`.
 - **Probe proven end-to-end.** Run live on gpt-4o-mini via the eval runners
   (`--calibration probe`), the probe gate cuts compound failure 18.3% → 0.9% (retail) and
-  28% → 8% (airline), concentrating abstention on the dangerous actions rather than refusing
-  blindly (`FINDINGS.md` §12). Coverage cost is real; a probe-specific threshold is the next step.
+  28% → 8% (airline). A threshold sweep (`--t-high 0.6`) shows the safety is discrimination,
+  not caution: on retail the probe strictly dominates the rule-based gate (less abstention,
+  less compound, higher selective success at once); airline is far safer but wants a lower,
+  per-domain threshold since its probe scores cluster low (`FINDINGS.md` §12).
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.
