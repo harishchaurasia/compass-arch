@@ -50,6 +50,12 @@ so the public API may still change between minor versions.
   does NOT dominate at any swept threshold - the one that recovers coverage (0.4) pushes
   compound above baseline, so its similar offline AUC (0.66) does not buy a dominating
   operating point. Dominance is domain-specific (`FINDINGS.md` §12).
+- **Probe holds across all four models.** Live runs on qwen2.5:14b/7b and llama3.1:8b (both
+  suites) drive retail compound to near-zero on every model and fix the qwen2.5:14b regression
+  where baseline Compass made things worse (18.3% → 0.0% retail, 42% → 18% airline), by scoring
+  the action-vs-request match instead of the model's flat confidence (`FINDINGS.md` §13).
+  Caveat recorded: the shipped probe is fit on these models' traces, so the out-of-sample
+  evidence remains §11's held-out CV and cross-domain transfer.
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.

@@ -6,8 +6,8 @@ A `find → diagnose → intervene → measure` arc across four models: a fronti
 tasks); §6 is the cross-domain MCP filesystem suite (31 tasks); §7 is the verification
 ablation, §8 the `T_HIGH` sweep, §9 a second real τ-bench domain (airline, 50 tasks), §10 a
 from-the-traces test of the "precondition check" fix for the discrimination gap, §11 a
-learned-probe attack on it with a semantic action-vs-request signal, and §12 that probe run
-live on the suites.
+learned-probe attack on it with a semantic action-vs-request signal, §12 that probe run
+live on gpt-4o-mini, and §13 the same probe live across all four models.
 The short version: Compass reduces destructive failures, but on the weak models it does so
 by *abstaining broadly* rather than by gating precisely, and §3/§7/§8 are the honest
 accounting of exactly how.
@@ -563,6 +563,69 @@ uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compa
 uv run python scripts/run_airline_eval.py --model gpt-4o-mini --conditions compass --calibration probe --t-high 0.4
 ```
 
+## 13. The probe across all four models
+
+§12 validated the probe on gpt-4o-mini. This runs `calibration="probe"` live on the other
+three - qwen2.5:14b, qwen2.5:7b, llama3.1:8b - across both real suites, against each model's
+existing vanilla and baseline-Compass rows. Same shipped probe, same shipped weights, at the
+default `T_HIGH = 0.8`.
+
+| retail | Compound: Vanilla → Compass → **Probe** | Abstain: Compass → Probe | Sel. success: Compass → Probe |
+|---|---|---|---|
+| gpt-4o-mini | 54.8% → 18.3% → **0.9%** | 60.9% → 76.5% | 15.6% → 11.1% |
+| qwen2.5:14b | 6.1% → 18.3% → **0.0%** | 26.1% → 37.4% | 10.6% → 6.9% |
+| qwen2.5:7b  | 12.2% → 12.2% → **0.0%** | 18.3% → 45.2% | 8.5% → 9.5% |
+| llama3.1:8b | 1.7% → 0.9% → **0.0%** | 19.1% → **13.9%** | 4.3% → 4.0% |
+
+| airline | Compound: Vanilla → Compass → **Probe** | Abstain: Compass → Probe | Sel. success: Compass → Probe |
+|---|---|---|---|
+| gpt-4o-mini | 78.0% → 28.0% → **8.0%** | 56.0% → 70.0% | 31.8% → 20.0% |
+| qwen2.5:14b | 28.0% → 42.0% → **18.0%** | 32.0% → 50.0% | 20.6% → 24.0% |
+| qwen2.5:7b  | 24.0% → 24.0% → **4.0%** | 34.0% → 38.0% | 27.3% → **35.5%** |
+| llama3.1:8b | 6.0% → 0.0% → **0.0%** | 2.0% → **0.0%** | 38.8% → 38.0% |
+
+Three things hold across the board, and one caveat frames them.
+
+1. **The probe drives retail compound failure to near-zero for every model** - 0.9%, 0.0%,
+   0.0%, 0.0% - and low on airline (8%, 18%, 4%, 0%). The rule-based gate never reached that
+   consistency: baseline Compass leaves retail compound at 18.3% (gpt-4o-mini, qwen2.5:14b) or
+   12.2% (qwen2.5:7b).
+
+2. **It fixes the qwen2.5:14b regression that was a headline negative result.** §2 and §9
+   showed baseline Compass makes qwen2.5:14b *worse* - its flat ~1.0 confidence sails the first
+   destructive action past the gate, so compound rose 6.1% → 18.3% on retail and 28% → 42% on
+   airline. The probe ignores stated confidence and scores the action-vs-request match instead,
+   and reverses it: 18.3% → **0.0%** retail, 42% → **18%** airline, while lifting airline
+   selective success 20.6% → 24%. The single worst case for the rule-based gate becomes a win.
+
+3. **On the timid model the probe is not even a coverage tax.** llama3.1:8b rarely acts
+   destructively, and the probe respects that: on retail it abstains *less* than baseline
+   Compass (13.9% vs 19.1%) while still reaching 0% compound, and on airline it abstains on
+   nothing (0%) and holds selective success at 38%. Where there is little to gate, it gates
+   little - the opposite of the blanket-refusal failure mode of the earlier variants.
+
+The caveat, stated plainly: the shipped probe was fit on traces from these same four models
+and tasks, so these live runs are *in-distribution for the models* - the genuine
+out-of-sample evidence is the held-out CV and the cross-domain transfer of §11, not this
+table. And the coverage cost is real and model-dependent: gpt-4o-mini and qwen2.5:7b pay
+15-27 extra points of retail abstention, and selective success moves both ways (up on
+qwen2.5:7b, down on gpt-4o-mini and qwen2.5:14b), so outside the timid model the probe still
+buys safety with coverage. Airline stays harder (qwen2.5:14b 18%, gpt-4o-mini 8%), consistent
+with §12's finding that its scores separate less cleanly.
+
+The through-line across all four models is the cleanest statement of what the probe is for:
+**it helps most exactly where the rule-based gate helped least.** gpt-4o-mini's verbalized
+confidence already carried signal, so baseline Compass worked and the probe mainly sharpens
+it; the Qwens' confidence is flat, so baseline Compass was blind or actively harmful, and the
+probe supplies the discrimination that was missing outright. One training-free signal,
+effective across a frontier API model and three local ones, for opposite reasons.
+
+```bash
+uv run python scripts/run_tau_eval.py     --provider ollama --model qwen2.5:7b --conditions compass --calibration probe
+uv run python scripts/run_airline_eval.py --provider ollama --model qwen2.5:7b --conditions compass --calibration probe
+# ...and likewise for qwen2.5:14b and llama3.1:8b
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -613,7 +676,18 @@ threshold that recovers coverage (0.4) pushes compound *above* baseline, so its 
 offline AUC does not buy a dominating operating point. The discrimination signal every
 earlier section said was missing now demonstrably makes the running agent safer, and on one
 real domain safer *and* higher-coverage than the locked baseline - though §12 is equally the
-record that a strong ranking metric does not guarantee a dominating gate on every domain.
+record that a strong ranking metric does not guarantee a dominating gate on every domain. And
+§13 shows the flag holds across all four models: retail compound goes to near-zero for every
+one of them, and - most tellingly - the probe *fixes the qwen2.5:14b regression* where
+baseline Compass had made things worse, because it scores the action instead of trusting the
+model's flat confidence. The probe helps most exactly where the rule-based gate helped least,
+which is the whole point: it supplies discrimination the verbalized signal never had. The
+honest ledger still stands - the models are in-distribution for the fit (the out-of-sample
+evidence is §11's held-out CV and cross-domain transfer), coverage is still spent to buy
+safety except on the timid model, and airline stays the harder domain - but the arc that
+opened with "safe only by abstaining" closes with a training-free signal that makes the
+running agent measurably, and sometimes strictly, better across a frontier API model and
+three local ones.
 
 ## Reproduce
 
