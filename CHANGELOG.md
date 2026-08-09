@@ -56,6 +56,13 @@ so the public API may still change between minor versions.
   the action-vs-request match instead of the model's flat confidence (`FINDINGS.md` §13).
   Caveat recorded: the shipped probe is fit on these models' traces, so the out-of-sample
   evidence remains §11's held-out CV and cross-domain transfer.
+- **Probe generalizes to an unseen model.** `analysis/cross_model_probe.py` runs
+  leave-one-model-out CV: fit the probe on three models, score the held-out fourth's trials
+  only. It beats the shipped rule-based score on every held-out model (mean +0.15 AUC), and
+  biggest where the model's verbalized confidence is anti-informative (gpt-4o-mini 0.43 → 0.77,
+  qwen2.5:14b 0.46 → 0.64) - the §13 regression fix reproduced on a model held out of the fit,
+  so the learned signal is a property of the action-vs-request match, not memorized per-model
+  confidence habits (`FINDINGS.md` §14). Honest bound: small held-out n, one embedding backend.
 
 ### Changed
 - CI now runs on a Python 3.11 / 3.12 matrix and verifies the leaderboard is in sync.

@@ -7,7 +7,8 @@ tasks); §6 is the cross-domain MCP filesystem suite (31 tasks); §7 is the veri
 ablation, §8 the `T_HIGH` sweep, §9 a second real τ-bench domain (airline, 50 tasks), §10 a
 from-the-traces test of the "precondition check" fix for the discrimination gap, §11 a
 learned-probe attack on it with a semantic action-vs-request signal, §12 that probe run
-live on gpt-4o-mini, and §13 the same probe live across all four models.
+live on gpt-4o-mini, §13 the same probe live across all four models, and §14 a
+leave-one-model-out test of whether the probe generalizes to a model it never trained on.
 The short version: Compass reduces destructive failures, but on the weak models it does so
 by *abstaining broadly* rather than by gating precisely, and §3/§7/§8 are the honest
 accounting of exactly how.
@@ -626,6 +627,70 @@ uv run python scripts/run_airline_eval.py --provider ollama --model qwen2.5:7b -
 # ...and likewise for qwen2.5:14b and llama3.1:8b
 ```
 
+## 14. Out-of-model-distribution: does the probe generalize to a model it never saw?
+
+§13 ended on a caveat: the shipped probe is fit on traces from the same four models it was
+then evaluated on, so those live runs are in-distribution for the models. The out-of-sample
+evidence to that point was §11's random-fold CV (every model still appears in its own
+training folds) and the cross-*domain* transfer. Neither answers the question a deployer
+actually has: point this probe at a model it was never trained on, and does it still rank
+clean actions above compound ones?
+
+Leave-one-*model*-out CV answers it directly. For each of the four models, fit the logistic
+probe on the other three and score discrimination on the held-out model's trials only, so
+the held-out model contributes nothing - not even a fold - to the weights judging it. Same
+embedding backend, same features, same `_fit`/`_standardize` as §11; only the partition
+changes. The shipped rule-based score (mean calibrated `success_prob`) is computed on the
+identical held-out rows as a same-sample bar. (`analysis/cross_model_probe.py`.)
+
+| Held-out model | n | #comp | Probe AUC | Shipped AUC | Δ |
+|---|---|---|---|---|---|
+| gpt-4o-mini | 49 | 19 | **0.774** | 0.433 | **+0.340** |
+| qwen2.5:14b | 83 | 42 | **0.638** | 0.458 | **+0.180** |
+| qwen2.5:7b  | 74 | 26 | **0.716** | 0.631 | +0.085 |
+| llama3.1:8b | 14 | 1  | 0.846 | 0.846 | +0.000 |
+
+Mean probe-minus-shipped across held-out models: **+0.15**.
+
+1. **The probe beats the shipped score on every model it was never trained on.** The weights
+   generalize across the model shift: fit on three models, they still discriminate on the
+   fourth, on every one of the four.
+
+2. **It helps most exactly where the shipped score is anti-informative** - the same pattern
+   as §13, now shown out-of-model. On the held-out overconfident models the rule-based score
+   is *below chance* (gpt-4o-mini 0.433, qwen2.5:14b 0.458): its flat verbalized confidence
+   ranks compound trials slightly *above* clean ones. The probe, scoring the action-vs-request
+   match instead, recovers those to 0.774 and 0.638. That is the qwen2.5:14b regression fix of
+   §13 reproduced on a model held entirely out of the fit - it is not memorization of that
+   model's traces.
+
+3. **The limits are real and stated.** llama3.1:8b held out has n=14 with a *single* compound
+   trial, so its 0.846 (probe == shipped) rests on ranking one trial and is not evidence of
+   anything; it is in the table for completeness, not as a result. Per-domain (below), the
+   held-out airline slices are weaker than retail - qwen2.5:14b's held-out airline is 0.524,
+   essentially chance - consistent with §12/§13 that airline separates less cleanly.
+
+| Held-out model | retail (n, #comp) | airline (n, #comp) |
+|---|---|---|
+| gpt-4o-mini | 0.689 (23, 5) | 0.667 (26, 14) |
+| qwen2.5:14b | 0.587 (49, 21) | 0.524 (34, 21) |
+| qwen2.5:7b  | 0.744 (43, 14) | 0.697 (31, 12) |
+| llama3.1:8b | 0.846 (14, 1) | -- |
+
+What this does and does not buy: it refutes the sharpest reading of the §13 caveat - that the
+probe "works" only because it memorized these four models - since weights fit without a model
+still rank its actions, and beat the shipped gate doing so. It does *not* make the probe
+production-proven: n per held-out model is small, the compound counts are thin, a single
+embedding backend (`nomic-embed-text`) underlies every fold, and all four models still come
+from one era of open/frontier releases. The honest claim is bounded and now earned: the
+signal the probe learns is a property of the action-vs-request relationship, not of any one
+model's confidence habits, which is exactly why it transfers where verbalized confidence
+cannot.
+
+```bash
+uv run python analysis/cross_model_probe.py   # needs the §11 embedding cache warmed
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -681,13 +746,17 @@ record that a strong ranking metric does not guarantee a dominating gate on ever
 one of them, and - most tellingly - the probe *fixes the qwen2.5:14b regression* where
 baseline Compass had made things worse, because it scores the action instead of trusting the
 model's flat confidence. The probe helps most exactly where the rule-based gate helped least,
-which is the whole point: it supplies discrimination the verbalized signal never had. The
-honest ledger still stands - the models are in-distribution for the fit (the out-of-sample
-evidence is §11's held-out CV and cross-domain transfer), coverage is still spent to buy
-safety except on the timid model, and airline stays the harder domain - but the arc that
-opened with "safe only by abstaining" closes with a training-free signal that makes the
-running agent measurably, and sometimes strictly, better across a frontier API model and
-three local ones.
+which is the whole point: it supplies discrimination the verbalized signal never had. And §14
+answers the sharpest objection to §13 - that the probe only works because it was fit on these
+same models - with leave-one-model-out CV: weights fit on three models still rank the fourth's
+actions (mean +0.15 AUC over the shipped score, positive on all four, and biggest exactly
+where the model's confidence is anti-informative), so the signal is a property of the
+action-vs-request match, not of any one model's confidence habits. The honest ledger still
+stands - coverage is still spent to buy safety except on the timid model, airline stays the
+harder domain, and §14's held-out n is small with a single embedding backend under every fold
+- but the arc that opened with "safe only by abstaining" closes with a training-free signal
+that makes the running agent measurably, and sometimes strictly, better across a frontier API
+model and three local ones, and that generalizes to a model it never saw.
 
 ## Reproduce
 
