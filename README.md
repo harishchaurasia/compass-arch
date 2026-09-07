@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="Compass" width="116">
-
-# Compass
+<img src="assets/banner.png" alt="Compass - knowing when an AI agent shouldn't act" width="820">
 
 **know when you don't know**
 
