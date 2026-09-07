@@ -44,8 +44,9 @@ compound by the same categorical block.
 | **Compound failure** | 54.8% | **18.3%** |
 | Trials that mutated an order | 95 | **24** |
 
-Plain ReAct is dangerous on this suite: it mutates the wrong order on 95 of 115
-tasks. Baseline Compass cuts compound failures by roughly two thirds with no
+Plain ReAct is dangerous on this suite: it mutates an order on 95 of 115 tasks,
+and on 54.8% of tasks it does so while getting the task wrong (the compound-failure
+rate above). Baseline Compass cuts compound failures by roughly two thirds with no
 special variant, because gpt-4o-mini's verbalized confidence and the trajectory
 features together give the aggregator an honest success probability to gate on.
 The cost is coverage: abstention jumps to 60.9% and selective success drops.
