@@ -155,3 +155,25 @@ def test_shrink_still_applies_trajectory_penalties():
     # shrink: 0.5*1.0+0.25 = 0.75; step_count=8 → -0.10 → 0.65
     prob = calibrate(1.0, _features(step_count=8), shrink=True)
     assert prob == pytest.approx(0.65)
+
+
+# ── Phase 4 aggregation ablation (aggregate=False) ──────────────────────────────
+
+def test_aggregate_default_is_baseline():
+    """aggregate=True must be byte-identical to the locked baseline."""
+    f = _features(step_count=8, steps_since_new_tool=2)
+    assert calibrate(0.9, f, aggregate=True) == pytest.approx(calibrate(0.9, f))
+
+
+def test_noagg_ignores_every_trajectory_penalty():
+    """The ablation returns raw confidence no matter how bad the trajectory is:
+    the worst-case trajectory that the baseline drives to 0.40 stays at 0.90."""
+    worst = _features(step_count=11, is_oscillating=True, steps_since_new_tool=2)
+    assert calibrate(0.9, worst) == pytest.approx(0.40)        # baseline penalizes
+    assert calibrate(0.9, worst, aggregate=False) == pytest.approx(0.90)  # ablation does not
+
+
+def test_noagg_still_clamps_to_unit_interval():
+    """Raw pass-through is still clamped — no feature can push it out of [0, 1]."""
+    assert calibrate(1.5, _features(), aggregate=False) == pytest.approx(1.0)
+    assert calibrate(-0.2, _features(), aggregate=False) == pytest.approx(0.0)

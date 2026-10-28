@@ -68,11 +68,14 @@ def main() -> None:
         choices=["vanilla", "compass"],
     )
     parser.add_argument(
-        "--calibration", default="baseline", choices=["baseline", "shrinkage", "probe"],
+        "--calibration", default="baseline",
+        choices=["baseline", "shrinkage", "probe", "noagg"],
         help="compass aggregator variant. 'shrinkage' is the Phase 4 base-rate prior "
              "(rows under model='<model>-shrink'); 'probe' is the Phase 4 semantic "
              "embedding probe (rows under model='<model>-probe', needs Ollama + "
-             "nomic-embed-text). The locked baseline is untouched either way.",
+             "nomic-embed-text); 'noagg' is the Phase 4 ablation that disables "
+             "trajectory-feature aggregation and gates on raw verbalized confidence "
+             "(rows under model='<model>-noagg'). The locked baseline is untouched.",
     )
     parser.add_argument(
         "--no-verification", action="store_true",
@@ -97,6 +100,7 @@ def main() -> None:
 
     shrink = args.calibration == "shrinkage"
     probe_mode = args.calibration == "probe"
+    noagg = args.calibration == "noagg"
     # Tag stored rows for the variant so its data never mixes with the locked
     # baseline; the underlying provider model name is unchanged.
     model_label = args.model
@@ -104,6 +108,8 @@ def main() -> None:
         model_label += "-shrink"
     if probe_mode:
         model_label += "-probe"
+    if noagg:
+        model_label += "-noagg"
     if args.no_verification:
         model_label += "-noverify"
     if args.t_high is not None:
@@ -118,7 +124,8 @@ def main() -> None:
     vanilla = build_vanilla_agent(model, ALL_TOOLS, policy=policy)
     compass = build_compass_agent(
         model, ALL_TOOLS, tool_risk=TOOL_RISK, policy=policy,
-        calibration=("probe" if probe_mode else None), calibration_shrink=shrink,
+        calibration=("probe" if probe_mode else "raw" if noagg else None),
+        calibration_shrink=shrink,
         verification=not args.no_verification,
     )
 

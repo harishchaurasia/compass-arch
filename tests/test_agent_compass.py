@@ -3,6 +3,7 @@
 FakeCompassModel supports with_structured_output() and returns CompassStep
 objects in sequence — no real LLM calls.
 """
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 
@@ -767,3 +768,70 @@ def test_ablation_still_abstains_on_high_risk_low_confidence():
 
     assert state["abstained"] is True
     assert called == []
+
+
+# ── aggregation ablation (calibration="raw") ──────────────────────────────────
+
+def test_unknown_calibration_mode_raises():
+    with pytest.raises(ValueError, match="Unknown calibration mode"):
+        build_compass_agent(FakeCompassModel([]), [read_record], calibration="bogus")
+
+
+def test_noagg_executes_where_rule_would_abstain_on_oscillation():
+    """Behavioral contrast proving the flag changes gating. An oscillating
+    trajectory makes the rule aggregator cap success_prob at 0.50 (below
+    T_HIGH=0.8) and ABSTAIN on a high-risk step. The noagg ablation ignores the
+    trajectory, so the raw 0.85 clears the gate and the action executes (after
+    the standard high-risk confirm)."""
+    captured = []
+
+    @tool
+    def wipe(record_id: str) -> str:
+        """Wipe a record permanently."""
+        captured.append(record_id)
+        return "wiped"
+
+    # 3 low-risk reads then a high-risk wipe → last 4 tool steps = {read_record,
+    # wipe} = 2 unique → oscillating, which the rule aggregator caps to 0.50.
+    reads = [
+        CompassStep(
+            reasoning=f"check {i}",
+            action=CompassAction(tool="read_record", args={"record_id": "r1"}),
+            confidence=0.9,
+            risk_level="low",
+        )
+        for i in range(3)
+    ]
+    wipe_step = CompassStep(
+        reasoning="now wipe it",
+        action=CompassAction(tool="wipe", args={"record_id": "r1"}),
+        confidence=0.85,  # ≥ T_HIGH on its own, but oscillation drags it under
+        risk_level="high",
+    )
+
+    # rule (locked default): oscillation cap 0.50 < T_HIGH → ABSTAIN, never wipes.
+    rule_agent = build_compass_agent(
+        FakeCompassModel([*reads, wipe_step]), [read_record, wipe]
+    )
+    rule_state = rule_agent.invoke(_init_state("Check r1 then wipe it"))
+    assert rule_state["abstained"] is True
+    assert captured == []
+
+    # raw (ablation): trajectory ignored → 0.85 ≥ T_HIGH → confirm → execute.
+    raw_steps = [
+        *[s.model_copy() for s in reads],
+        wipe_step.model_copy(),
+        wipe_step.model_copy(),  # re-affirms the same action at the confirm prompt
+        CompassStep(
+            reasoning="done",
+            action=CompassAction(final_answer="Wiped r1."),
+            confidence=0.9,
+            risk_level="low",
+        ),
+    ]
+    raw_agent = build_compass_agent(
+        FakeCompassModel(raw_steps), [read_record, wipe], calibration="raw"
+    )
+    raw_state = raw_agent.invoke(_init_state("Check r1 then wipe it"))
+    assert raw_state["abstained"] is False
+    assert captured == ["r1"]

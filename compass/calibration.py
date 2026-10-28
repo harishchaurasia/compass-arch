@@ -23,17 +23,30 @@ def calibrate(
     verbalized_confidence: float,
     features: TrajectoryFeatures,
     shrink: bool = False,
+    aggregate: bool = True,
 ) -> float:
     """Return success_prob ∈ [0, 1], correcting for known model overconfidence.
 
     shrink=False is the locked baseline. shrink=True applies the Phase 4
     base-rate shrinkage prior before the (unchanged) trajectory penalties.
+
+    aggregate=True is the locked baseline. aggregate=False is the Phase 4
+    ablation arm: it skips every trajectory-feature penalty (step count,
+    oscillation, stuck-on-tool) and returns the verbalized confidence straight
+    through. It isolates what the rule-based aggregator actually buys over the
+    raw self-reported number plus the static risk floor — the one major
+    component never ablated on its own. shrink still applies first if both are
+    set, but the runner only ever combines aggregate=False with shrink=False.
     """
     if shrink:
         verbalized_confidence = (
             SHRINK_WEIGHT * verbalized_confidence + (1.0 - SHRINK_WEIGHT) * SHRINK_PRIOR
         )
     prob = verbalized_confidence
+
+    if not aggregate:
+        # Ablation: no trajectory penalties. Raw confidence is the success_prob.
+        return max(0.0, min(1.0, prob))
 
     # Step count penalty — only the highest bracket applies
     if features.step_count > 10:

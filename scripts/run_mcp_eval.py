@@ -60,8 +60,11 @@ def main() -> None:
         choices=["vanilla", "compass"],
     )
     parser.add_argument(
-        "--calibration", default="baseline", choices=["baseline", "shrinkage"],
-        help="compass aggregator variant; rows stored under model='<model>-shrink'.",
+        "--calibration", default="baseline", choices=["baseline", "shrinkage", "noagg"],
+        help="compass aggregator variant. 'shrinkage' is the base-rate prior (rows "
+             "under model='<model>-shrink'); 'noagg' is the ablation that disables "
+             "trajectory-feature aggregation and gates on raw verbalized confidence "
+             "(rows under model='<model>-noagg').",
     )
     parser.add_argument(
         "--no-verification", action="store_true",
@@ -79,9 +82,12 @@ def main() -> None:
     load_dotenv()
     tasks = TASKS[: args.limit] if args.limit else TASKS
     shrink = args.calibration == "shrinkage"
+    noagg = args.calibration == "noagg"
     model_label = args.model
     if shrink:
         model_label += "-shrink"
+    if noagg:
+        model_label += "-noagg"
     if args.no_verification:
         model_label += "-noverify"
     if args.t_high is not None:
@@ -100,6 +106,7 @@ def main() -> None:
             "vanilla": build_vanilla_agent(model, tools, policy=POLICY),
             "compass": build_compass_agent(
                 model, tools, tool_risk=fs_backend.TOOL_RISK, policy=POLICY,
+                calibration=("raw" if noagg else None),
                 calibration_shrink=shrink, verification=not args.no_verification,
             ),
         }

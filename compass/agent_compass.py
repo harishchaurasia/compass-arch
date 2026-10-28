@@ -164,9 +164,11 @@ def build_compass_agent(
     given, is embedded in the system prompt (e.g. the τ-bench retail wiki).
     calibration selects the aggregator that turns confidence + features into a
     success probability: "rule" (the locked default), "shrink" (the Phase 4
-    base-rate prior), or "probe" (the Phase 4 semantic embedding probe of
+    base-rate prior), "probe" (the Phase 4 semantic embedding probe of
     FINDINGS section 11, which scores high-risk actions by how well they match
-    the request). The legacy calibration_shrink=True is kept as a synonym for
+    the request), or "raw" (the Phase 4 ablation that disables trajectory-feature
+    aggregation and gates on the verbalized confidence straight through, to
+    isolate what the aggregator buys). The legacy calibration_shrink=True is kept as a synonym for
     calibration="shrink" so existing callers keep working; an explicit
     calibration wins if both are given. In "probe" mode a SemanticProbe is loaded
     from the shipped weights (inject your own via probe= for a custom embedder);
@@ -186,7 +188,7 @@ def build_compass_agent(
     # injected (a missing weights file raises here - a build-time misconfiguration -
     # while a missing embedding backend degrades gracefully at runtime instead).
     mode = calibration or ("shrink" if calibration_shrink else "rule")
-    if mode not in ("rule", "shrink", "probe"):
+    if mode not in ("rule", "shrink", "probe", "raw"):
         raise ValueError(f"Unknown calibration mode: {mode!r}")
     if mode == "probe" and probe is None:
         probe = SemanticProbe.load()
@@ -206,7 +208,10 @@ def build_compass_agent(
                 )
             except ProbeUnavailable as e:
                 _log.warning("semantic probe unavailable (%s); using rule-based score", e)
-        return calibrate(step.confidence, features, shrink=(mode == "shrink"))
+        return calibrate(
+            step.confidence, features,
+            shrink=(mode == "shrink"), aggregate=(mode != "raw"),
+        )
 
     # Local (Ollama) models don't reliably emit native tool_calls, so
     # method="function_calling" leaves `parsed` empty — they put schema-shaped
