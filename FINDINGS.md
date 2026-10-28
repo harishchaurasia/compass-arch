@@ -7,10 +7,11 @@ tasks); §6 is the cross-domain MCP filesystem suite (31 tasks); §7 is the veri
 ablation, §8 the `T_HIGH` sweep, §9 a second real τ-bench domain (airline, 50 tasks), §10 a
 from-the-traces test of the "precondition check" fix for the discrimination gap, §11 a
 learned-probe attack on it with a semantic action-vs-request signal, §12 that probe run
-live on gpt-4o-mini, §13 the same probe live across all four models, and §14 a
-leave-one-model-out test of whether the probe generalizes to a model it never trained on.
+live on gpt-4o-mini, §13 the same probe live across all four models, §14 a
+leave-one-model-out test of whether the probe generalizes to a model it never trained on,
+and §15 an ablation of the rule-based trajectory aggregator itself.
 The short version: Compass reduces destructive failures, but on the weak models it does so
-by *abstaining broadly* rather than by gating precisely, and §3/§7/§8 are the honest
+by *abstaining broadly* rather than by gating precisely, and §3/§7/§8/§15 are the honest
 accounting of exactly how.
 
 Compound failure here means the agent took a destructive, irreversible action while
@@ -692,6 +693,65 @@ cannot.
 uv run python analysis/cross_model_probe.py   # needs the §11 embedding cache warmed
 ```
 
+## 15. Ablation: does the trajectory aggregator earn its place?
+
+§7 ablated *verification*. This section ablates the other half of the machinery:
+the **rule-based trajectory aggregator**. Shipped Compass gates on
+`calibrate()`, which takes the model's raw verbalized confidence and then
+discounts it with structural penalties - step count, an oscillation cap, a
+stuck-on-same-tool penalty (`compass/calibration.py`, locked on the 5-task dev
+split). The `--calibration noagg` arm (`aggregate=False`) strips every one of
+those penalties, so the gate sees the raw self-reported number plus only the
+static risk floor and the (unchanged) verification pass. Rows are stored under
+`model="<model>-noagg"`. compass vs noagg, retail single-shot:
+
+| Model | compass sel / abstain / **compound** | noagg sel / abstain / **compound** |
+|---|---|---|
+| gpt-4o-mini | 15.6% / 60.9% / **18.3%** (24 mut) | 14.4% / 21.7% / **33.0%** (48 mut) |
+| qwen2.5:14b | 10.6% / 26.1% / **18.3%** (24) | 11.0% / 5.2% / **16.5%** (24) |
+| qwen2.5:7b | 8.5% / 18.3% / **12.2%** (16) | 8.9% / 1.8% / **12.3%** (16) |
+| llama3.1:8b | 4.3% / 19.1% / **0.9%** (1) | 3.8% / 9.6% / **0.9%** (1) |
+
+(qwen2.5:7b noagg is n=114 - one task errored out of the run.)
+
+Three honest reads, and they line up with §7 almost exactly.
+
+**The aggregator's only visible lever is abstention.** Removing it collapses the
+abstention rate on every model - gpt-4o-mini 60.9% → 21.7%, qwen2.5:14b 26.1% →
+5.2%, qwen2.5:7b 18.3% → 1.8%, llama3.1:8b 19.1% → 9.6%. The trajectory penalties
+*are* what drive the gate to refuse; the raw verbalized number almost never
+falls below threshold on its own (the models' confidence is flat and high, §2).
+So "the aggregator" and "abstaining more" are, empirically, the same knob.
+
+**That abstention converts to safety only on the capable model.** On
+gpt-4o-mini, stripping the aggregator nearly doubles compound failure (18.3% →
+33.0%) and doubles the orders mutated (24 → 48): its trajectory penalties were
+catching real impending failures and refusing them. On all three local models,
+removing it barely touches compound - qwen2.5:14b actually drops (18.3% →
+16.5%), qwen2.5:7b is flat (12.2% → 12.3%), llama3.1:8b is unchanged (0.9%).
+There, the aggregator's extra abstention was almost pure coverage cost: it
+refused actions without preventing destruction, because on a flat-confidence
+model the penalties fire too late to gate the *first* high-risk action (§2) and
+do not discriminate good actions from bad (pooled AUC ≈ 0.53, §8).
+
+**You need both halves on the capable model, neither on the weak ones.** The
+convergence with §7 is the sharp part: on gpt-4o-mini this ablation lands at
+**33.0% compound - the exact number the verification ablation (§7) produced**.
+Turning off the aggregator (verification on) and turning off verification
+(aggregator on) each recover the same half of the safety; only with *both*
+mechanisms does gpt-4o-mini reach 18.3%. On the local models both ablations are
+within a task or two of the shipped number, so neither mechanism is doing real
+safety work there - consistent with the whole document's thesis that on weak,
+overconfident models Compass buys safety by blanket refusal, not by a score that
+tells good actions from bad. The aggregator earns its place, but only where an
+honest confidence signal already exists for it to sharpen.
+
+```bash
+# reproduce this section (compass rows already exist; this adds the -noagg arm)
+uv run python scripts/run_tau_eval.py --model gpt-4o-mini --calibration noagg --conditions compass
+uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b --calibration noagg --conditions compass
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -699,8 +759,10 @@ aggregator handing it *honest* success probabilities. What it needs depends on t
 model's failure mode, and the four models span the range:
 
 - **When confidence carries signal** (gpt-4o-mini), baseline Compass already cuts
-  compound failures by two thirds, and the verification pass does most of that work
-  (§7). No variant needed.
+  compound failures by two thirds, and it takes *both* halves of the machinery to
+  get there: ablating verification (§7) and ablating the trajectory aggregator (§15)
+  each independently give back the same half of the safety, landing at an identical
+  33.0% compound. No variant needed, but neither mechanism is spare.
 - **When it collapses to a constant** (qwen2.5:7b and 14B), the only real early signal
   is gone and trajectory features arrive too late to gate the first destructive action
   (§2). Baseline Compass only halves compound failures; the base-rate shrinkage prior
@@ -720,7 +782,10 @@ execution outright (shrinkage) or by near-total abstention (llama), not by a sco
 tells good actions from bad - pooled discrimination AUC is ≈ 0.53 (§8). On a model that
 is already careful (gpt-4o-mini, §6) the coverage cost is paid with no safety benefit at
 all. "Zero" means zero destructive actions on these tasks *because the agent mostly
-stopped acting*, not a proof of calibrated safety. The real open problem (Phase 4+) is an
+stopped acting*, not a proof of calibrated safety. §15 sharpens this from the other
+direction: ablating the trajectory aggregator shows it is, empirically, an abstention
+knob - it buys real safety only on gpt-4o-mini and is near-pure coverage cost on the three
+local models. The real open problem (Phase 4+) is an
 *earlier, higher-discrimination* honest signal so the gate can keep coverage instead of
 buying safety with blanket refusal - and §10 narrows what that signal can be: the obvious
 structural fix (precondition checks - target/destination grounding, read-before-write)

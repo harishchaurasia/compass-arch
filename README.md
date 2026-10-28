@@ -261,6 +261,7 @@ Built in the open, heading toward production - not there yet.
 - ✅ Second real τ-bench domain (**airline**, 50 tasks, all 4 models): baseline Compass tracks failure mode (helps `gpt-4o-mini` **78% → 28%**, hurts Qwen14B **28% → 42%**); shrinkage zeros compound on all three local models
 - ✅ **Filesystem MCP** suite (31 tasks, real stdio server); reproduces cross-domain, with `gpt-4o-mini` marking the boundary
 - ✅ Verification ablation + `T_HIGH` sweep locate where the safety actually comes from ([FINDINGS.md](FINDINGS.md) §7-8)
+- ✅ **Aggregation ablation** (`--calibration noagg`) isolates the trajectory aggregator: its one lever is abstention, and that only buys safety on the capable model (gpt-4o-mini compound **18.3% → 33.0%** without it) while being near-pure coverage cost on the overconfident local models - the mirror of the verification ablation, landing at the same 33.0% on gpt-4o-mini ([FINDINGS.md](FINDINGS.md) §15)
 - ✅ Drives real off-the-shelf MCP servers (official filesystem + GitHub)
 - ✅ One-call public API (`compass.run`) + runnable example, and a regenerable [leaderboard](LEADERBOARD.md) anyone can PR a model into
 - ✅ Ruled out the cheap discrimination fix: structural **precondition checks** (target/destination grounding, read-before-write) score at chance from the traces ([FINDINGS.md](FINDINGS.md) §10) - the failure is a semantically wrong action on a correctly-grounded target

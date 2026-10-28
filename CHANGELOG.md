@@ -7,6 +7,13 @@ so the public API may still change between minor versions.
 ## [Unreleased]
 
 ### Added
+- **Aggregation ablation.** `build_compass_agent(calibration="raw")` (`--calibration noagg`
+  on all three runners) strips the rule-based trajectory penalties so the gate sees raw
+  verbalized confidence plus only the static risk floor. Isolates what the aggregator buys:
+  its one lever is abstention, which converts to safety only on the capable model
+  (gpt-4o-mini compound 18.3% → 33.0% without it) and is near-pure coverage cost on the
+  overconfident local models - the mirror of the §7 verification ablation, landing at the
+  same 33.0% on gpt-4o-mini (`FINDINGS.md` §15). Locked baseline unchanged; no schema change.
 - **Public API.** `from compass import get_model, build_compass_agent, run` - a one-call
   entry point (`compass.run`) that gates your own LangChain tools without touching the
   LangGraph state. Runnable end-to-end in `examples/gate_your_agent.py`.
