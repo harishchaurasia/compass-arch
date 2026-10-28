@@ -269,7 +269,8 @@ Built in the open, heading toward production - not there yet.
 - ✅ **Proven end-to-end.** Run live on gpt-4o-mini, the probe gate cuts compound failure **18.3% → 0.9%** (retail) and **28% → 8%** (airline). A threshold sweep shows this is discrimination, not caution: on retail the probe at `T_HIGH=0.6` **strictly dominates** the rule-based gate - *less* abstention (45% vs 61%), *lower* compound (11% vs 18%), *higher* selective success (19% vs 16%) all at once ([FINDINGS.md](FINDINGS.md) §12)
 - ⚖️ **But dominance is domain-specific.** On airline no swept threshold beats baseline on both axes - safe only at low coverage; the one threshold that recovers coverage (0.4) pushes compound *above* baseline. Same offline AUC (0.66), different operating-point story - an honest limit worth stating
 - ✅ **Holds across all four models.** Live probe runs drive retail compound to near-zero on every model (0.9 / 0.0 / 0.0 / 0.0%), and crucially **fix the qwen2.5:14b regression** where baseline Compass made things *worse* (18.3% → **0.0%** retail) by scoring the action instead of trusting flat confidence ([FINDINGS.md](FINDINGS.md) §13)
-- 🔜 A sharper/calibrated probe score or a per-domain threshold for airline; out-of-model-distribution validation (the shipped probe is fit on these four models' traces)
+- ✅ **Generalizes to a model it never trained on.** Leave-one-model-out CV (fit on three models, test on the held-out fourth) beats the shipped confidence gate on **all four** held-out models (mean **+0.15** AUC), helping most exactly where the model's own confidence is anti-informative (gpt-4o-mini 0.43 → 0.77) - the request-vs-action signal is not memorized per model ([FINDINGS.md](FINDINGS.md) §14)
+- 🔜 A sharper/calibrated probe score or a per-domain threshold for airline; validation on a second embedding backend (every probe result sits under one)
 
 ## Development
 

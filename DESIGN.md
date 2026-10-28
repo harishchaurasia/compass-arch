@@ -115,10 +115,21 @@ This represents the current production deployment baseline. Not a strawman — w
 
 ### Models (4)
 
+Planned:
+
 - **Claude Opus 4.7** (Anthropic API) — frontier reasoning
 - **GPT-5.5** (OpenAI API) — frontier general
 - **Gemini 3-tier** (Google API) — frontier alternative
 - **Qwen 2.5 7B** (local on RTX 5080 via vLLM or Ollama) — open-source reference
+
+**As built (what the full 115-task A/B actually ran on, the honest evidence boundary):**
+one frontier API model, **`gpt-4o-mini`** (OpenAI), and three local Ollama models,
+**`qwen2.5:14b`**, **`qwen2.5:7b`**, and **`llama3.1:8b`**. This is the authoritative
+list — see `EVALUATED_MODELS` in `compass/models.py` and the per-model table in
+FINDINGS.md. The planned frontier trio above was descoped to a single, cheaper frontier
+model plus a wider local spread (three open models instead of one) so the budget bought
+more cross-model coverage; `get_model` still runs on any provider `init_chat_model`
+supports (`DEFAULT_MODELS`), those three are just the ones with full benchmarks.
 
 ### Task suite (196 tasks as built)
 
