@@ -7,6 +7,13 @@ so the public API may still change between minor versions.
 ## [Unreleased]
 
 ### Added
+- **Logprob confidence source.** `build_compass_agent(confidence_source="logprob")`
+  (`--confidence-source logprob`, OpenAI only) gates on confidence derived from the
+  action tokens' logprobs instead of the model's self-reported number; one run keeps both
+  signals (`step.verbalized_confidence`) for a paired comparison. A negative result
+  (`FINDINGS.md` §16): on gpt-4o-mini the logprob signal discriminates *worse* than the
+  self-reported number (AUC 0.57 vs 0.67, below chance at the high-risk action) because
+  token probability tracks fluency, not correctness.
 - **Aggregation ablation.** `build_compass_agent(calibration="raw")` (`--calibration noagg`
   on all three runners) strips the rule-based trajectory penalties so the gate sees raw
   verbalized confidence plus only the static risk floor. Isolates what the aggregator buys:

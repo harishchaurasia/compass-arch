@@ -9,7 +9,8 @@ from-the-traces test of the "precondition check" fix for the discrimination gap,
 learned-probe attack on it with a semantic action-vs-request signal, §12 that probe run
 live on gpt-4o-mini, §13 the same probe live across all four models, §14 a
 leave-one-model-out test of whether the probe generalizes to a model it never trained on,
-and §15 an ablation of the rule-based trajectory aggregator itself.
+§15 an ablation of the rule-based trajectory aggregator itself, and §16 a negative result
+on token logprobs as an alternative confidence source.
 The short version: Compass reduces destructive failures, but on the weak models it does so
 by *abstaining broadly* rather than by gating precisely, and §3/§7/§8/§15 are the honest
 accounting of exactly how.
@@ -752,6 +753,59 @@ uv run python scripts/run_tau_eval.py --model gpt-4o-mini --calibration noagg --
 uv run python scripts/run_tau_eval.py --provider ollama --model qwen2.5:14b --calibration noagg --conditions compass
 ```
 
+## 16. A different confidence source: token logprobs (a negative result)
+
+Every section so far feeds the gate the model's *self-reported* `confidence`
+number, and the whole document's thesis is that that number is unreliable. The
+obvious next question: is there a cheaper, model-*internal* signal that is more
+honest - the token logprobs of the action the model actually committed to, which
+it cannot consciously inflate? `confidence_source="logprob"` (`--confidence-source
+logprob`, OpenAI only) answers it. It invokes gpt-4o-mini plain with logprobs on,
+recovers the step from content JSON, and sets the step's confidence to
+`exp(mean logprob)` over the tokens spanning the chosen action. Crucially it
+*also* keeps the self-reported number in `verbalized_confidence`, so a single run
+carries both signals on the **same trajectories** - a paired comparison with no
+parse-path confound. Retail, gpt-4o-mini, compass condition, 109 trials (6 of 115
+errored on the plain-output path):
+
+| Confidence signal | AUC ↑ | ECE ↓ | Brier ↓ |
+|---|---|---|---|
+| verbalized (per-trial mean) | **0.667** | **0.817** | **0.770** |
+| logprob (per-trial mean) | 0.573 | 0.858 | 0.842 |
+| verbalized @ first high-risk action | **0.624** | 0.879 | 0.856 |
+| logprob @ first high-risk action | 0.441 | 0.874 | 0.851 |
+
+**The internal signal is worse, not better.** The logprob confidence
+discriminates successful trials from failed ones *less* well than the
+self-reported number (AUC 0.573 vs 0.667), and at the one place that matters for
+compound failure - the first high-risk action - it falls **below chance** (0.441).
+Both signals are badly over-confident (ECE > 0.8: both sit near 1.0 while only 13
+of 109 trials succeed), but logprob is the more over-confident of the two.
+
+**Why: token probability measures fluency, not correctness.** The per-step
+distributions explain it - the logprob signal is *more* saturated than the
+verbalized one: 72% of steps score >= 0.99 (mean 0.978) versus 51% (mean 0.939)
+for the self-reported number. A fluent model emits its chosen action - right or
+wrong - with uniformly high token probability, so "how sure the model was about
+the words" carries even less signal about "was this the right action" than the
+number it writes down. This is the §10 lesson again in a new place: the obvious
+cheap signal (there, structural precondition checks; here, action-token logprobs)
+does not carry the discrimination, which is why §11's semantic request-vs-action
+match - not confidence of any flavor - is the thing that finally works.
+
+Honest limits: one provider (gpt-4o-mini) and one domain (retail); 6 trials
+errored on the plain-output path (n=109); and the derivation is one choice among
+several (mean over action tokens), though the near-total saturation makes it
+unlikely a different reduction rescues it. The **gating** behavior of the logprob
+run (77.1% abstention, 31.2% compound, vs the shipped verbalized compass's 60.9% /
+18.3%) is *not* a clean comparison - it is confounded by the plain-vs-structured
+parse path and the 6 missing trials - so the claim rests on the paired,
+confound-free discrimination/calibration numbers above, not on the gate behavior.
+
+```bash
+uv run python scripts/run_tau_eval.py --model gpt-4o-mini --confidence-source logprob --conditions compass
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -790,7 +844,10 @@ local models. The real open problem (Phase 4+) is an
 buying safety with blanket refusal - and §10 narrows what that signal can be: the obvious
 structural fix (precondition checks - target/destination grounding, read-before-write)
 was tested against the traces and does **not** discriminate, because the failure mode is a
-semantically wrong action on a correctly-grounded target. What is left is a semantic match
+semantically wrong action on a correctly-grounded target. §16 rules out the other obvious
+cheap signal - the action's own token logprobs - which discriminate *worse* than the
+self-reported number (and below chance at the high-risk action), because token probability
+tracks fluency, not correctness. What is left is a semantic match
 between the proposed action and the user's actual request - and §11 lands it: a lexical
 proxy adds real held-out signal on retail (0.40 → 0.54) but is too crude to beat the
 shipped rule everywhere, whereas swapping in genuine sentence embeddings lifts a held-out
