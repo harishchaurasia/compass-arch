@@ -1,6 +1,7 @@
 """Compass calibrated agent: structured output + trajectory features + action policy."""
 import json
 import logging
+import math
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -107,6 +108,69 @@ def salvage_step(content: str) -> CompassStep | None:
     return None
 
 
+def _action_char_span(text: str) -> tuple[int, int] | None:
+    """Character span of the `"action": { ... }` object inside a CompassStep
+    JSON string. String-aware brace matching so a brace inside an arg value
+    does not throw off the depth count. Returns None if no action object."""
+    key = text.find('"action"')
+    if key == -1:
+        return None
+    brace = text.find("{", key)
+    if brace == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for j in range(brace, len(text)):
+        c = text[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return (brace, j + 1)
+    return None
+
+
+def _logprob_confidence(ai_message: BaseMessage) -> float | None:
+    """Derive a confidence in [0,1] from the token logprobs of the action the
+    model committed to. Reads OpenAI's per-token content logprobs
+    (`response_metadata["logprobs"]["content"]`), locates the tokens spanning
+    the `"action"` object, and returns exp(mean logprob) over them - the mean
+    per-token probability of the action tokens. Returns None (caller keeps the
+    verbalized number) when logprobs are absent or no action object is present,
+    e.g. a bare final answer."""
+    md = getattr(ai_message, "response_metadata", {}) or {}
+    content_lp = (md.get("logprobs") or {}).get("content") or []
+    if not content_lp:
+        return None
+    toks = [e.get("token", "") for e in content_lp]
+    logps = [e.get("logprob") for e in content_lp]
+    span = _action_char_span("".join(toks))
+    if span is None:
+        return None
+    a, b = span
+    off = 0
+    selected: list[float] = []
+    for tok, lg in zip(toks, logps):
+        start, end = off, off + len(tok)
+        off = end
+        if lg is not None and end > a and start < b:  # token overlaps the action span
+            selected.append(lg)
+    if not selected:
+        return None
+    return max(0.0, min(1.0, math.exp(sum(selected) / len(selected))))
+
+
 class CompassState(TypedDict):
     messages: Annotated[list[BaseMessage], _append]
     steps: Annotated[list[CompassStep], _append]
@@ -157,6 +221,7 @@ def build_compass_agent(
     calibration: str | None = None,
     probe: SemanticProbe | None = None,
     verification: bool = True,
+    confidence_source: str = "verbalized",
 ) -> StateGraph:
     """tool_risk maps tool name → static risk class ('low'|'medium'|'high').
     Effective risk is max(model's verbalized risk_level, tool class), so an
@@ -179,7 +244,19 @@ def build_compass_agent(
     high-risk confirm pass so the gate is purely EXECUTE vs ABSTAIN. Shipped
     Compass keeps verification on; the arm exists to separate how much of the
     safety result comes from verification steering the agent off a destructive
-    path versus from abstention alone."""
+    path versus from abstention alone.
+
+    confidence_source selects where the per-step confidence comes from:
+    "verbalized" (default) is the number the model writes in its JSON;
+    "logprob" instead derives it from the token logprobs of the action the
+    model committed to (mean per-token probability over the action tokens), a
+    model-internal signal it cannot consciously inflate. The logprob path does
+    not use structured output - it invokes the model plain (with logprobs on)
+    and recovers the step via salvage_step - so it is OpenAI-only (raises for
+    any other provider, since only OpenAI content logprobs are wired here) and
+    stashes the original verbalized number in step.verbalized_confidence for the
+    paired comparison. The aggregator (calibration=) still runs on top of
+    whichever confidence source is chosen, so the two are orthogonal flags."""
     tool_risk = tool_risk or {}
     tool_map = {t.name: t for t in tools}
 
@@ -192,6 +269,20 @@ def build_compass_agent(
         raise ValueError(f"Unknown calibration mode: {mode!r}")
     if mode == "probe" and probe is None:
         probe = SemanticProbe.load()
+
+    # Resolve the confidence source. "logprob" reads OpenAI content logprobs via
+    # a plain (non-structured) invoke, so it is wired for OpenAI only; failing
+    # loud at build time beats silently running verbalized under a logprob label
+    # and corrupting the comparison.
+    if confidence_source not in ("verbalized", "logprob"):
+        raise ValueError(f"Unknown confidence_source: {confidence_source!r}")
+    use_logprob = confidence_source == "logprob"
+    if use_logprob and type(model).__name__ != "ChatOpenAI":
+        raise ValueError(
+            "confidence_source='logprob' requires an OpenAI model (ChatOpenAI); "
+            f"got {type(model).__name__}. Token logprobs are only wired for OpenAI."
+        )
+    lp_model = model.bind(logprobs=True) if use_logprob else None
 
     def _score(state: CompassState, step: CompassStep, features, risk: str) -> float:
         """success_prob for a step. The probe scores only high-risk actions (where
@@ -219,7 +310,11 @@ def build_compass_agent(
     # decoding to force valid JSON there. API models keep function_calling
     # (that path already has data and works). Either way, salvage_step below
     # recovers a step from raw content if native parsing still comes back None.
-    if type(model).__name__ == "ChatOllama":
+    # The logprob path invokes the model plain (see _plan_logprob), so it needs
+    # no structured wrapper.
+    if use_logprob:
+        structured_model = None
+    elif type(model).__name__ == "ChatOllama":
         structured_model = model.with_structured_output(
             CompassStep, method="json_schema", include_raw=True
         )
@@ -228,8 +323,51 @@ def build_compass_agent(
             CompassStep, method="function_calling", strict=False, include_raw=True
         )
     system = _system_prompt(tools, policy)
+    # The logprob path can't use structured output (OpenAI strict json_schema
+    # rejects the open-ended action.args dict, and tool_call tokens carry no
+    # content logprobs), so it invokes the model plain and salvages the step
+    # from content JSON. This extra line forces JSON-only output on that path.
+    system_lp = SystemMessage(content=(
+        system.content + "\n\nReply with ONLY the JSON object for this step - "
+        "no prose, no markdown fences, nothing before or after it."
+    )) if use_logprob else None
+
+    def _plan_logprob(state: CompassState) -> dict:
+        # logprob confidence source: plain invoke (logprobs on) → salvage_step →
+        # keep the model's self-reported number in verbalized_confidence and
+        # overwrite confidence with the logprob-derived value. Same bounded
+        # parse-retry loop as the structured path.
+        messages = [system_lp, *state["messages"]]
+        content = ""
+        for _ in range(1 + MAX_PARSE_RETRIES):
+            ai = lp_model.invoke(messages)
+            content = getattr(ai, "content", "") or ""
+            step = salvage_step(content)
+            if step is not None:
+                # Plain (non-structured) output: gpt-4o-mini often fills BOTH a
+                # tool and a final_answer (sometimes ""), which route() would read
+                # as "finish" and end the trial after one step. Structured output
+                # keeps tool and answer in separate channels; normalise to that
+                # invariant here (a tool call wins) so the two paths are
+                # comparable, without touching route() or any other condition.
+                if step.action.tool and step.action.final_answer is not None:
+                    step.action.final_answer = None
+                step.verbalized_confidence = step.confidence
+                lp_conf = _logprob_confidence(ai)
+                if lp_conf is not None:
+                    step.confidence = lp_conf
+                else:
+                    _log.debug("no action logprobs for step; keeping verbalized confidence")
+                return {"steps": [step]}
+            messages = [*messages, HumanMessage(content=_PARSE_RETRY_NUDGE)]
+        raise ValueError(
+            f"logprob plan: unparseable output after {MAX_PARSE_RETRIES} retries.\n"
+            f"Last content: {content!r}"
+        )
 
     def plan(state: CompassState) -> dict:
+        if use_logprob:
+            return _plan_logprob(state)
         # Parse the next step: native structured output → content salvage →
         # a bounded retry that nudges the model to re-emit a valid step. Weak
         # local models sometimes drop required fields or ramble prose into the

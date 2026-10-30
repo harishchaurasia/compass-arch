@@ -83,6 +83,12 @@ def main() -> None:
              "is purely EXECUTE/ABSTAIN. Rows are stored under model='<model>-noverify'.",
     )
     parser.add_argument(
+        "--confidence-source", default="verbalized", choices=["verbalized", "logprob"],
+        help="where per-step confidence comes from. 'verbalized' (default) is the "
+             "number the model writes; 'logprob' derives it from the action tokens' "
+             "logprobs (OpenAI only). Rows are stored under model='<model>-logprob'.",
+    )
+    parser.add_argument(
         "--t-high", type=float, default=None,
         help="sensitivity sweep only: override the high-risk threshold for THIS run "
              "(shipped locked value stays 0.8 in policy.py). Rows are stored under "
@@ -101,6 +107,7 @@ def main() -> None:
     shrink = args.calibration == "shrinkage"
     probe_mode = args.calibration == "probe"
     noagg = args.calibration == "noagg"
+    logprob = args.confidence_source == "logprob"
     # Tag stored rows for the variant so its data never mixes with the locked
     # baseline; the underlying provider model name is unchanged.
     model_label = args.model
@@ -110,6 +117,8 @@ def main() -> None:
         model_label += "-probe"
     if noagg:
         model_label += "-noagg"
+    if logprob:
+        model_label += "-logprob"
     if args.no_verification:
         model_label += "-noverify"
     if args.t_high is not None:
@@ -127,6 +136,7 @@ def main() -> None:
         calibration=("probe" if probe_mode else "raw" if noagg else None),
         calibration_shrink=shrink,
         verification=not args.no_verification,
+        confidence_source=args.confidence_source,
     )
 
     print(f"\n{'─' * 60}")

@@ -27,6 +27,10 @@ def _serialize_trace(final_state: dict, condition: str) -> dict:
                 "final_answer": s.action.final_answer,
                 "confidence": s.confidence,
                 "risk_level": s.risk_level,
+                # None except in confidence_source="logprob" runs, where
+                # `confidence` holds the logprob value and this holds the
+                # model's self-reported number (FINDINGS §16 paired comparison).
+                "verbalized_confidence": s.verbalized_confidence,
             })
     return {"steps": steps, "messages": messages}
 

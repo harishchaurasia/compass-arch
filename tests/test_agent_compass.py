@@ -3,6 +3,8 @@
 FakeCompassModel supports with_structured_output() and returns CompassStep
 objects in sequence — no real LLM calls.
 """
+import math
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
@@ -10,6 +12,8 @@ from langchain_core.tools import tool
 from compass.agent_compass import (
     CompassAction,
     CompassStep,
+    _action_char_span,
+    _logprob_confidence,
     build_compass_agent,
     salvage_step,
 )
@@ -768,6 +772,107 @@ def test_ablation_still_abstains_on_high_risk_low_confidence():
 
     assert state["abstained"] is True
     assert called == []
+
+
+# ── logprob confidence source ─────────────────────────────────────────────────
+
+def _ai_with_logprobs(tokens: list[str], logps: list[float]) -> AIMessage:
+    """An AIMessage whose content is the concatenated tokens and whose
+    response_metadata carries OpenAI-shaped per-token content logprobs."""
+    return AIMessage(
+        content="".join(tokens),
+        response_metadata={
+            "logprobs": {"content": [
+                {"token": t, "logprob": lp} for t, lp in zip(tokens, logps)
+            ]}
+        },
+    )
+
+
+class ChatOpenAI:  # name matters: build checks type(model).__name__ == "ChatOpenAI"
+    """Minimal OpenAI stand-in for the logprob path: bind() is a no-op, invoke()
+    returns prebuilt AIMessages (plain content, no structured output)."""
+
+    def __init__(self, messages: list[AIMessage]):
+        self._iter = iter(messages)
+
+    def bind(self, **kwargs):
+        return self
+
+    def invoke(self, messages):
+        return next(self._iter)
+
+
+def test_action_char_span_isolates_the_action_object():
+    text = '{"reasoning": "x", "action": {"tool": "wipe", "args": {"id": "a1"}}, "confidence": 0.3}'
+    span = _action_char_span(text)
+    assert span is not None
+    a, b = span
+    assert text[a:b] == '{"tool": "wipe", "args": {"id": "a1"}}'  # nested braces matched
+
+
+def test_action_char_span_none_when_absent():
+    assert _action_char_span('{"reasoning": "x", "confidence": 0.3}') is None
+
+
+def test_logprob_confidence_averages_only_action_tokens():
+    # non-action tokens are near-certain (ln 0.99); the action object is uncertain
+    # (ln 0.5). The derived confidence must reflect the ACTION tokens only.
+    toks = [
+        '{"reasoning": "x", ',
+        '"action": ',
+        '{"tool": "wipe", "args": {"id": "a1"}}',  # the whole action object, one token
+        ', "confidence": 0.3, "risk_level": "high"}',
+    ]
+    logps = [math.log(0.99), math.log(0.99), math.log(0.5), math.log(0.99)]
+    conf = _logprob_confidence(_ai_with_logprobs(toks, logps))
+    assert conf == pytest.approx(0.5)
+
+
+def test_logprob_confidence_none_without_logprobs():
+    assert _logprob_confidence(AIMessage(content="{}", response_metadata={})) is None
+
+
+def test_logprob_source_requires_openai_model():
+    with pytest.raises(ValueError, match="requires an OpenAI model"):
+        build_compass_agent(
+            FakeCompassModel([]), [read_record], confidence_source="logprob"
+        )
+
+
+def test_unknown_confidence_source_raises():
+    with pytest.raises(ValueError, match="Unknown confidence_source"):
+        build_compass_agent(FakeCompassModel([]), [read_record], confidence_source="bogus")
+
+
+def test_logprob_overrides_confidence_and_keeps_verbalized():
+    """End to end on the fake OpenAI model: the committed step's confidence is the
+    logprob-derived value, and the model's self-reported number is preserved in
+    verbalized_confidence."""
+    # step 1: a low-risk read (executes regardless of confidence), action tokens
+    # carry ln(0.9) so the derived confidence is 0.9; self-reported JSON is 0.3.
+    read_toks = [
+        '{"reasoning": "read it", ',
+        '"action": ',
+        '{"tool": "read_record", "args": {"record_id": "r1"}}',
+        ', "confidence": 0.3, "risk_level": "low"}',
+    ]
+    read_logps = [math.log(0.99), math.log(0.99), math.log(0.9), math.log(0.99)]
+    # step 2: a plain final answer with no logprobs -> confidence stays verbalized.
+    done = AIMessage(content=(
+        '{"reasoning": "done", "action": {"tool": null, "args": {}, '
+        '"final_answer": "All read."}, "confidence": 0.9, "risk_level": "low"}'
+    ), response_metadata={})
+
+    model = ChatOpenAI([_ai_with_logprobs(read_toks, read_logps), done])
+    agent = build_compass_agent(model, [read_record], confidence_source="logprob")
+    state = agent.invoke(_init_state("Read r1"))
+
+    first = state["steps"][0]
+    assert first.action.tool == "read_record"
+    assert first.confidence == pytest.approx(0.9)          # logprob-derived
+    assert first.verbalized_confidence == pytest.approx(0.3)  # self-reported, preserved
+    assert "All read." in state["messages"][-1].content
 
 
 # ── aggregation ablation (calibration="raw") ──────────────────────────────────
