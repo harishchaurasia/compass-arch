@@ -272,7 +272,8 @@ Built in the open, heading toward production - not there yet.
 - ⚖️ **But dominance is domain-specific.** On airline no swept threshold beats baseline on both axes - safe only at low coverage; the one threshold that recovers coverage (0.4) pushes compound *above* baseline. Same offline AUC (0.66), different operating-point story - an honest limit worth stating
 - ✅ **Holds across all four models.** Live probe runs drive retail compound to near-zero on every model (0.9 / 0.0 / 0.0 / 0.0%), and crucially **fix the qwen2.5:14b regression** where baseline Compass made things *worse* (18.3% → **0.0%** retail) by scoring the action instead of trusting flat confidence ([FINDINGS.md](FINDINGS.md) §13)
 - ✅ **Generalizes to a model it never trained on.** Leave-one-model-out CV (fit on three models, test on the held-out fourth) beats the shipped confidence gate on **all four** held-out models (mean **+0.15** AUC), helping most exactly where the model's own confidence is anti-informative (gpt-4o-mini 0.43 → 0.77) - the request-vs-action signal is not memorized per model ([FINDINGS.md](FINDINGS.md) §14)
-- 🔜 A sharper/calibrated probe score or a per-domain threshold for airline; validation on a second embedding backend (every probe result sits under one)
+- ✅ **Backend-robust.** Swapping the probe's embedder from `nomic-embed-text` to `mxbai-embed-large` (different family, 768→1024-dim) reproduces the held-out discrimination (0.63→**0.65** retail, 0.66→**0.65** airline), the cross-domain transfer, and the leave-one-model-out result (mean **+0.156** AUC vs +0.15) to within noise - the signal is a property of the representation, not of one embedder ([FINDINGS.md](FINDINGS.md) §17)
+- 🔜 A sharper/calibrated probe score or a per-domain threshold for airline
 
 ## Development
 

@@ -7,6 +7,14 @@ so the public API may still change between minor versions.
 ## [Unreleased]
 
 ### Added
+- **Embedding-backend robustness check.** `COMPASS_EMBED_MODEL` overrides the probe's cosine
+  backend (default `nomic-embed-text`) so the §11/§14 results can be re-scored under a second
+  embedder with nothing else changed; `analysis/embed_probe.py` now uses the auto-truncating
+  `/api/embed` endpoint so a small-context model no longer 500s on a long observation. Running
+  it under `mxbai-embed-large` (different family, 768→1024-dim) reproduces the held-out AUC
+  (0.65 retail / 0.65 airline), the cross-domain transfer, and the leave-one-model-out result
+  (mean +0.156 vs +0.15) to within noise - the probe signal is not backend-specific
+  (`FINDINGS.md` §17). The cache key already namespaces by model, so both backends coexist.
 - **Logprob confidence source.** `build_compass_agent(confidence_source="logprob")`
   (`--confidence-source logprob`, OpenAI only) gates on confidence derived from the
   action tokens' logprobs instead of the model's self-reported number; one run keeps both

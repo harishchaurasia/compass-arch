@@ -9,8 +9,9 @@ from-the-traces test of the "precondition check" fix for the discrimination gap,
 learned-probe attack on it with a semantic action-vs-request signal, §12 that probe run
 live on gpt-4o-mini, §13 the same probe live across all four models, §14 a
 leave-one-model-out test of whether the probe generalizes to a model it never trained on,
-§15 an ablation of the rule-based trajectory aggregator itself, and §16 a negative result
-on token logprobs as an alternative confidence source.
+§15 an ablation of the rule-based trajectory aggregator itself, §16 a negative result
+on token logprobs as an alternative confidence source, and §17 a robustness check that
+the probe result survives a second, architecturally different embedding backend.
 The short version: Compass reduces destructive failures, but on the weak models it does so
 by *abstaining broadly* rather than by gating precisely, and §3/§7/§8/§15 are the honest
 accounting of exactly how.
@@ -806,6 +807,76 @@ confound-free discrimination/calibration numbers above, not on the gate behavior
 uv run python scripts/run_tau_eval.py --model gpt-4o-mini --confidence-source logprob --conditions compass
 ```
 
+## 17. Robustness: does the probe result survive a second embedding backend?
+
+Every probe number in this document - §11's held-out CV and cross-domain transfer,
+§13's live runs, §14's leave-one-model-out - rests on a single embedding backend,
+`nomic-embed-text`. That caveat is stated in §11, §13, and §14, and it is the sharpest
+remaining objection: maybe the "action-vs-request match beats the shipped gate" signal is
+an artefact of one embedder, not a real property of the representation. This section
+settles it by swapping the backend and changing nothing else.
+
+`COMPASS_EMBED_MODEL` overrides the cosine backend; the feature interface, the CV harness,
+the fitted-probe logic, and the 2000-char input cap are byte-identical (`analysis/embed_probe.py`,
+`analysis/cross_model_probe.py`). The second embedder is **`mxbai-embed-large`** (335M params,
+1024-dim, a BERT-large / Mixedbread model) against the shipped **`nomic-embed-text`** (137M,
+768-dim) - different family, different dimensionality, different training, so any agreement
+is the signal, not a near-duplicate model. The only backend-specific wrinkle: mxbai's
+512-token context truncates the rare long JSON observation (the `/api/embed` endpoint clips
+it rather than erroring); at a 2000-char cap (~500 tokens) this almost never fires.
+
+**The held-out discrimination reproduces, to within noise.**
+
+| Held-out AUC (clean > compound), full probe | Pooled | Retail | Airline |
+|---|---|---|---|
+| Shipped rule-based gate | 0.499 | 0.399 | 0.604 |
+| Probe, TF-IDF affinities | 0.606 | 0.537 | 0.542 |
+| Probe, **`nomic-embed-text`** (shipped) | 0.698 | 0.633 | 0.659 |
+| Probe, **`mxbai-embed-large`** | 0.696 | **0.648** | 0.647 |
+
+The two embedders land within 0.015 AUC of each other on every cell, both beat the lexical
+proxy and the shipped rule-based gate on *both* real domains, and the one §11 headline -
+first signal to clear the shipped gate on retail and airline at once - holds under either.
+The cross-domain transfer reproduces with its asymmetry intact, which is the stronger test:
+
+| Cross-domain AUC (train → test) | retail → airline | airline → retail |
+|---|---|---|
+| Probe, `nomic-embed-text` | 0.668 | 0.566 |
+| Probe, `mxbai-embed-large` | 0.649 | 0.577 |
+
+Both backends transfer retail → airline at ~0.65 (TF-IDF collapses to 0.489 there) and both
+stay weak airline → retail at ~0.57 - the same "train on the broader domain" lesson from §11,
+not a backend artefact. Leave-one-*model*-out (§14) tells the same story:
+
+| Held-out model | n | #comp | Probe AUC (mxbai) | Probe AUC (nomic, §14) | Shipped AUC |
+|---|---|---|---|---|---|
+| gpt-4o-mini | 49 | 19 | **0.772** | 0.774 | 0.433 |
+| qwen2.5:14b | 83 | 42 | **0.654** | 0.638 | 0.458 |
+| qwen2.5:7b  | 74 | 26 | **0.720** | 0.716 | 0.631 |
+| llama3.1:8b | 14 | 1  | 0.846 | 0.846 | 0.846 |
+| **mean probe − shipped** | | | **+0.156** | +0.150 | — |
+
+mxbai beats the shipped score on every model it was never trained on, biggest exactly where
+verbalized confidence is anti-informative (gpt-4o-mini 0.433 → 0.772), mean +0.156 against
+nomic's +0.150. The **shipped column is byte-identical** between the two runs - it does not
+use embeddings - which is a clean confirmation that only the backend changed and the harness
+is otherwise untouched.
+
+So the probe's signal is **not nomic-specific**: a second, architecturally different embedder
+recovers the same discrimination, the same cross-domain transfer, and the same out-of-model
+generalization. The honest bound that remains is narrower than before - both are open
+embedders from one era, scored on the same committed traces, so a deployer should still
+confirm the signal under *their* embedder - but the "every number sits under one backend"
+objection is now answered, not deferred.
+
+```bash
+# default backend (nomic); then validate under a second embedder - cache keys include the
+# model name, so both coexist in analysis/.embed_cache.json
+uv run python analysis/embed_probe.py
+COMPASS_EMBED_MODEL=mxbai-embed-large uv run python analysis/embed_probe.py
+COMPASS_EMBED_MODEL=mxbai-embed-large uv run python analysis/cross_model_probe.py
+```
+
 ## Takeaway
 
 Compass's policy machinery is sound; its safety depends entirely on the
@@ -874,12 +945,17 @@ answers the sharpest objection to §13 - that the probe only works because it wa
 same models - with leave-one-model-out CV: weights fit on three models still rank the fourth's
 actions (mean +0.15 AUC over the shipped score, positive on all four, and biggest exactly
 where the model's confidence is anti-informative), so the signal is a property of the
-action-vs-request match, not of any one model's confidence habits. The honest ledger still
+action-vs-request match, not of any one model's confidence habits. And §17 removes the last
+"single embedding backend" asterisk the probe carried: swapping `nomic-embed-text` for
+`mxbai-embed-large` - a different family, dimensionality, and training - reproduces the
+held-out discrimination (0.648 retail / 0.647 airline vs 0.633 / 0.659), the cross-domain
+transfer, and the out-of-model generalization (mean +0.156 AUC vs +0.150) to within noise, so
+the signal is a property of the representation, not of one embedder. The honest ledger still
 stands - coverage is still spent to buy safety except on the timid model, airline stays the
-harder domain, and §14's held-out n is small with a single embedding backend under every fold
-- but the arc that opened with "safe only by abstaining" closes with a training-free signal
-that makes the running agent measurably, and sometimes strictly, better across a frontier API
-model and three local ones, and that generalizes to a model it never saw.
+harder domain, and §14's held-out n is small - but the arc that opened with "safe only by
+abstaining" closes with a training-free signal that makes the running agent measurably, and
+sometimes strictly, better across a frontier API model and three local ones, that generalizes
+to a model it never saw, and that does not depend on the particular embedder used to read it.
 
 ## Reproduce
 
