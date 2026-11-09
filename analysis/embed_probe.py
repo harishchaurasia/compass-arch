@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -34,9 +35,13 @@ from discrimination import DOMAINS, auc  # noqa: E402
 from learned_probe import AFFINITY_FEATS, BASE_FEATS, cross_domain_auc, evaluate  # noqa: E402
 from semantic_probe import SemProbe, collect  # noqa: E402
 
-OLLAMA = "http://localhost:11434/api/embeddings"
-MODEL = "nomic-embed-text"
-MAX_CHARS = 2000  # nomic context is ~2k tokens; observations can be long JSON blobs
+OLLAMA = "http://localhost:11434/api/embed"  # newer endpoint: auto-truncates to context
+# Default backend is nomic-embed-text (every FINDINGS probe number through section 16
+# sits under it). Override with COMPASS_EMBED_MODEL to validate the result replicates
+# under a second, architecturally different embedder (section 17). The cache key below
+# already includes the model name, so backends never collide in the one cache file.
+MODEL = os.environ.get("COMPASS_EMBED_MODEL", "nomic-embed-text")
+MAX_CHARS = 2000  # ~500 tokens; fits nomic's 2k and mxbai-embed-large's 512 context alike
 CACHE = Path(__file__).resolve().parent / ".embed_cache.json"
 
 
@@ -62,10 +67,15 @@ class Embedder:
         hit = self._cache.get(key)
         if hit is not None:
             return hit
-        body = json.dumps({"model": self.model, "prompt": text}).encode()
+        # /api/embed takes `input` and returns `embeddings: [[...]]`; truncate=True
+        # clips an over-context input (e.g. a long JSON blob past mxbai's 512 tokens)
+        # instead of erroring, which the legacy /api/embeddings endpoint did.
+        body = json.dumps(
+            {"model": self.model, "input": text, "truncate": True}
+        ).encode()
         req = urllib.request.Request(OLLAMA, data=body, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=60) as resp:
-            vec = json.loads(resp.read())["embedding"]
+            vec = json.loads(resp.read())["embeddings"][0]
         self._cache[key] = vec
         self._dirty = True
         return vec

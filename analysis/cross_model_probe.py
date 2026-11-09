@@ -33,6 +33,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from discrimination import BASE_MODELS, DOMAINS, auc  # noqa: E402
+from embed_probe import MODEL as EMBED_MODEL  # noqa: E402
 from embed_probe import Embedder  # noqa: E402
 from learned_probe import (  # noqa: E402
     AFFINITY_FEATS,
@@ -89,8 +90,8 @@ def main() -> int:
         embedder.cosine("ping", "pong")  # fail fast if Ollama/model is down
     except Exception as e:  # noqa: BLE001 - surface any backend failure clearly
         print(
-            f"Could not reach the embedding backend: {e}\n"
-            "Start Ollama and `ollama pull nomic-embed-text`, then run "
+            f"Could not reach the embedding backend ({EMBED_MODEL}): {e}\n"
+            f"Start Ollama and `ollama pull {EMBED_MODEL}`, then run "
             "analysis/embed_probe.py once to warm the cache.",
             file=sys.stderr,
         )
